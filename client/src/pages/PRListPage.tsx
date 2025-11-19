@@ -3,6 +3,7 @@ import { getPRs, GetPRsParams } from "../api/client";
 import { PRDoc } from "../types/contracts";
 import { PRCard } from "../components/PRCard";
 import { PRLabel } from "../types/contracts";
+import { Header } from "../components/Header";
 
 export function PRListPage() {
   const [prs, setPRs] = useState<PRDoc[]>([]);
@@ -48,8 +49,9 @@ export function PRListPage() {
   const totalPages = Math.ceil(total / limit);
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-100">
+      <Header />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Pull Requests</h1>
 
         {/* Filters and Search */}

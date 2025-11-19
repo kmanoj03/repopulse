@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getPR, regenerateSummary } from "../api/client";
 import { PRDoc } from "../types/contracts";
 import { ToastMessage } from "../components/ToastContainer";
+import { Header } from "../components/Header";
 
 interface PRDetailPageProps {
   onToast: (toast: ToastMessage) => void;
@@ -110,8 +111,9 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-100">
+      <Header />
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex items-start justify-between mb-4">
@@ -135,76 +137,61 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
         </div>
 
         {/* Summary Section */}
-        {pr.summary ? (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900">Summary</h2>
-              <button
-                onClick={handleRegenerateSummary}
-                disabled={regenerating}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {regenerating ? "Regenerating..." : "Regenerate Summary"}
-              </button>
-            </div>
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Summary</h2>
+            <button
+              onClick={handleRegenerateSummary}
+              disabled={regenerating}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {regenerating ? "Regenerating..." : "Regenerate Summary"}
+            </button>
+          </div>
 
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">TL;DR</h3>
+            <p className="text-gray-900">{pr.summary.tldr}</p>
+          </div>
+
+          {pr.summary.risks.length > 0 && (
             <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">TL;DR</h3>
-              <p className="text-gray-900">{pr.summary.tldr}</p>
-            </div>
-
-            {pr.summary.risks.length > 0 && (
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Risks</h3>
-                <div className="flex flex-wrap gap-2">
-                  {pr.summary.risks.map((risk) => (
-                    <span
-                      key={risk}
-                      className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        riskColors[risk] || riskColors.default
-                      }`}
-                    >
-                      {risk}
-                    </span>
-                  ))}
-                </div>
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Risks</h3>
+              <div className="flex flex-wrap gap-2">
+                {pr.summary.risks.map((risk) => (
+                  <span
+                    key={risk}
+                    className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      riskColors[risk] || riskColors.default
+                    }`}
+                  >
+                    {risk}
+                  </span>
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {pr.summary.labels.length > 0 && (
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Labels</h3>
-                <div className="flex flex-wrap gap-2">
-                  {pr.summary.labels.map((label) => (
-                    <span
-                      key={label}
-                      className="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium"
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
+          {pr.summary.labels.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Labels</h3>
+              <div className="flex flex-wrap gap-2">
+                {pr.summary.labels.map((label) => (
+                  <span
+                    key={label}
+                    className="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium"
+                  >
+                    {label}
+                  </span>
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            <div className="text-xs text-gray-500">
-              Summary generated at {formatDate(pr.summary.createdAt)}
-            </div>
+          <div className="text-xs text-gray-500">
+            Summary generated at {formatDate(pr.summary.createdAt)}
           </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <div className="flex items-center justify-between">
-              <p className="text-gray-600">No summary available</p>
-              <button
-                onClick={handleRegenerateSummary}
-                disabled={regenerating}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {regenerating ? "Generating..." : "Generate Summary"}
-              </button>
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* Files Table */}
         <div className="bg-white rounded-lg shadow-md p-6">

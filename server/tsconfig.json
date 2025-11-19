@@ -21,7 +21,8 @@
     "middleware/**/*.ts",
     "models/**/*.ts",
     "routes/**/*.ts",
-    "utils/**/*.ts"
+    "utils/**/*.ts",
+    "config/**/*.ts"
   ],
   "exclude": [
     "node_modules",
