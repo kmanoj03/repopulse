@@ -2,8 +2,28 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import express from "express";
+import cors from "cors";
 import mongoose from "mongoose";
-import app from "./app";
+import authRoutes from "./routes/auth";
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Auth routes
+app.use("/auth", authRoutes);
+
+// Protected API routes will be added here later
+// app.use("/api/prs", authMiddleware, prRoutes);
 
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/repopulse";
@@ -22,7 +42,6 @@ mongoose
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
 
 // Graceful shutdown
