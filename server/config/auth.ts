@@ -1,3 +1,7 @@
+// Ensure environment variables are loaded
+import dotenv from "dotenv";
+dotenv.config();
+
 import jwt from "jsonwebtoken";
 
 export interface JwtPayload {

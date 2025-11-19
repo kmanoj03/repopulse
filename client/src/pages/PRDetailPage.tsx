@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getPR, regenerateSummary } from "../api/client";
 import { PRDoc } from "../types/contracts";
 import { ToastMessage } from "../components/ToastContainer";
+import { Header } from "../components/Header";
 
 interface PRDetailPageProps {
   onToast: (toast: ToastMessage) => void;
@@ -110,8 +111,9 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-100">
+      <Header />
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex items-start justify-between mb-4">
