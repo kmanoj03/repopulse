@@ -1,34 +1,44 @@
-// Load environment variables FIRST, before any other imports
+import express from "express";
+import mongoose from "mongoose";
 import dotenv from "dotenv";
+import cors from "cors";
+import webhookRoutes from "./routes/route";
+
+// Load environment variables from .env file
 dotenv.config();
 
-import express from "express";
-import cors from "cors";
-import mongoose from "mongoose";
 import authRoutes from "./routes/auth";
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// ============================================
+// MIDDLEWARE SETUP
+// ============================================
+
+// CORS - Allow frontend to call this API
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    credentials: true,
+  })
+);
+
+// IMPORTANT: Use RAW body parser for webhook route (needed for signature verification)
+// GitHub sends the payload as raw bytes, and we need to verify HMAC signature
+app.use("/webhooks/github", express.raw({ type: "application/json" }));
+
+// Regular JSON parser for all other routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
+// ============================================
+// DATABASE CONNECTION
+// ============================================
 
-// Auth routes
-app.use("/auth", authRoutes);
+const MONGODB_URI =
+  process.env.MONGODB_URI || "mongodb://localhost:27017/repopulse";
 
-// Protected API routes will be added here later
-// app.use("/api/prs", authMiddleware, prRoutes);
-
-const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/repopulse";
-
-// Connect to MongoDB
 mongoose
   .connect(MONGODB_URI)
   .then(() => {
@@ -39,9 +49,41 @@ mongoose
     process.exit(1);
   });
 
-// Start server
+// ============================================
+// ROUTES
+// ============================================
+
+// Webhook routes - GitHub will POST to /webhooks/github
+app.use("/webhooks", webhookRoutes);
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Root endpoint - just a welcome message
+app.get("/", (req, res) => {
+  res.json({
+    message: "RepoPulse API Server",
+    version: "1.0.0",
+    endpoints: {
+      webhooks: "/webhooks/github",
+      health: "/healthz",
+    },
+  });
+});
+
+app.use("/auth", authRoutes);
+
+// ============================================
+// START SERVER
+// ============================================
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log("═══════════════════════════════════════");
+  console.log(`RepoPulse Server running on port ${PORT}`);
+  console.log(`Webhook endpoint: http://localhost:${PORT}/webhooks/github`);
+  console.log(`Health check: http://localhost:${PORT}/healthz`);
+  console.log("═══════════════════════════════════════");
 });
 
 // Graceful shutdown
@@ -56,4 +98,3 @@ process.on("SIGINT", () => {
   mongoose.connection.close();
   process.exit(0);
 });
-
