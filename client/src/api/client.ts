@@ -1,10 +1,11 @@
-import { PRListResponse, PRDoc, PRStatus, PRLabel } from "../types/contracts";
+import { PRListResponse, PRDoc } from "../types/contracts";
 
-// Mock data - in-memory array of PRs
+// Mock data - in-memory array of PRs (matches Mongoose model structure)
 const mockPRs: PRDoc[] = [
   {
     _id: "1",
-    repoId: 12345,
+    repoId: "12345",
+    repoFullName: "acme/repopulse",
     number: 42,
     title: "Add authentication middleware",
     author: "alice",
@@ -22,12 +23,14 @@ const mockPRs: PRDoc[] = [
       labels: ["backend", "security"],
       createdAt: "2024-01-15T10:30:00Z",
     },
+    slackMessageTs: null,
     createdAt: "2024-01-15T09:00:00Z",
     updatedAt: "2024-01-15T10:30:00Z",
   },
   {
     _id: "2",
-    repoId: 12345,
+    repoId: "12345",
+    repoFullName: "acme/repopulse",
     number: 41,
     title: "Update React dependencies",
     author: "bob",
@@ -44,12 +47,14 @@ const mockPRs: PRDoc[] = [
       labels: ["frontend", "deps"],
       createdAt: "2024-01-14T14:20:00Z",
     },
+    slackMessageTs: "1234567890.123456",
     createdAt: "2024-01-14T12:00:00Z",
     updatedAt: "2024-01-14T15:00:00Z",
   },
   {
     _id: "3",
-    repoId: 12345,
+    repoId: "12345",
+    repoFullName: "acme/repopulse",
     number: 40,
     title: "Configure CI/CD pipeline",
     author: "charlie",
@@ -66,12 +71,14 @@ const mockPRs: PRDoc[] = [
       labels: ["infra"],
       createdAt: "2024-01-13T16:45:00Z",
     },
+    slackMessageTs: null,
     createdAt: "2024-01-13T14:00:00Z",
     updatedAt: "2024-01-13T16:45:00Z",
   },
   {
     _id: "4",
-    repoId: 12345,
+    repoId: "12345",
+    repoFullName: "acme/repopulse",
     number: 39,
     title: "Fix SQL injection vulnerability",
     author: "alice",
@@ -88,12 +95,14 @@ const mockPRs: PRDoc[] = [
       labels: ["backend", "security"],
       createdAt: "2024-01-12T11:15:00Z",
     },
+    slackMessageTs: "1234567890.123455",
     createdAt: "2024-01-12T10:00:00Z",
     updatedAt: "2024-01-12T12:00:00Z",
   },
   {
     _id: "5",
-    repoId: 12345,
+    repoId: "12345",
+    repoFullName: "acme/repopulse",
     number: 38,
     title: "Refactor dashboard components",
     author: "diana",
@@ -111,12 +120,14 @@ const mockPRs: PRDoc[] = [
       labels: ["frontend"],
       createdAt: "2024-01-11T09:30:00Z",
     },
+    slackMessageTs: null,
     createdAt: "2024-01-11T08:00:00Z",
     updatedAt: "2024-01-11T10:00:00Z",
   },
   {
     _id: "6",
-    repoId: 12345,
+    repoId: "12345",
+    repoFullName: "acme/repopulse",
     number: 37,
     title: "Add monitoring and logging",
     author: "charlie",
@@ -134,6 +145,7 @@ const mockPRs: PRDoc[] = [
       labels: ["backend", "infra"],
       createdAt: "2024-01-10T13:20:00Z",
     },
+    slackMessageTs: null,
     createdAt: "2024-01-10T11:00:00Z",
     updatedAt: "2024-01-10T13:20:00Z",
   },
@@ -169,7 +181,7 @@ export async function getPRs(params: GetPRsParams = {}): Promise<PRListResponse>
   // Filter by label
   if (label) {
     filtered = filtered.filter(pr => 
-      pr.summary?.labels?.includes(label as PRLabel)
+      pr.summary.labels.includes(label)
     );
   }
 
@@ -212,10 +224,11 @@ export async function regenerateSummary(id: string): Promise<{ ok: boolean }> {
   await new Promise(resolve => setTimeout(resolve, 1500));
 
   const pr = mockPRs.find(p => p._id === id);
-  if (pr && pr.summary) {
+  if (pr) {
     // Update the summary in-memory (tweak the TL;DR)
     pr.summary.tldr = `[Regenerated] ${pr.summary.tldr}`;
     pr.summary.createdAt = new Date().toISOString();
+    pr.updatedAt = new Date().toISOString();
   }
 
   return { ok: true };

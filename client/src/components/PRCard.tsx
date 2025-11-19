@@ -37,7 +37,7 @@ export function PRCard({ pr }: PRCardProps) {
         </span>
       </div>
 
-      {pr.summary?.labels && pr.summary.labels.length > 0 && (
+      {pr.summary.labels && pr.summary.labels.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">
           {pr.summary.labels.map((label) => (
             <span
