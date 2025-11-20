@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { getPRs, GetPRsParams } from "../api/client";
-import { PRDoc } from "../types/contracts";
-import { PRCard } from "../components/PRCard";
+import { Repository } from "../types/contracts";
+import { RepositoryCard } from "../components/RepositoryCard";
 import { PRLabel } from "../types/contracts";
 import { Header } from "../components/Header";
 
 export function PRListPage() {
-  const [prs, setPRs] = useState<PRDoc[]>([]);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [labelFilter, setLabelFilter] = useState<string>("");
@@ -19,7 +19,7 @@ export function PRListPage() {
 
   // Debounce search query, but update other filters immediately
   useEffect(() => {
-    const fetchPRs = async () => {
+    const fetchRepositories = async () => {
       setLoading(true);
       try {
         const params: GetPRsParams = {
@@ -30,17 +30,17 @@ export function PRListPage() {
           limit,
         };
         const response = await getPRs(params);
-        setPRs(response.items);
-        setTotal(response.total);
+        setRepositories(response.data.repositories);
+        setTotal(response.data.pagination.total);
       } catch (error) {
-        console.error("Failed to load PRs:", error);
+        console.error("Failed to load repositories:", error);
       } finally {
         setLoading(false);
       }
     };
 
     const timer = setTimeout(() => {
-      fetchPRs();
+      fetchRepositories();
     }, searchQuery ? 300 : 0); // Debounce only if there's a search query
 
     return () => clearTimeout(timer);
@@ -136,22 +136,33 @@ export function PRListPage() {
           </div>
         </div>
 
-        {/* PR List */}
+        {/* Repository List */}
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading PRs...</p>
+            <p className="mt-4 text-gray-600">Loading repositories...</p>
           </div>
-        ) : prs.length === 0 ? (
+        ) : repositories.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-12 text-center">
-            <p className="text-gray-600 text-lg">No pull requests found</p>
+            <p className="text-gray-600 text-lg">No repositories found</p>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-              {prs.map((pr) => (
-                <PRCard key={pr._id} pr={pr} />
-              ))}
+            <div className="grid gap-4 mb-6">
+              {repositories.map((repo) => {
+                const openPRs = repo.prs.filter(pr => pr.status === "open").length;
+                const author = repo.repoFullName.split('/')[0];
+                return (
+                  <RepositoryCard
+                    key={repo.repoId}
+                    repoFullName={repo.repoFullName}
+                    repoId={repo.repoId}
+                    prCount={repo.prs.length}
+                    openCount={openPRs}
+                    author={author}
+                  />
+                );
+              })}
             </div>
 
             {/* Pagination */}

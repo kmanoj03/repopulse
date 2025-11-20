@@ -2,6 +2,8 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 // TypeScript interface
 export interface IPullRequest extends Document {
+  installationId: number;
+  userId: mongoose.Types.ObjectId | null;
   repoId: string;
   repoFullName: string;
   number: number;
@@ -9,7 +11,7 @@ export interface IPullRequest extends Document {
   author: string;
   branchFrom: string;
   branchTo: string;
-  status: string;
+  status: 'open' | 'closed' | 'merged';
   filesChanged: Array<{
     filename: string;
     additions: number;
@@ -29,6 +31,16 @@ export interface IPullRequest extends Document {
 // Mongoose schema
 const pullRequestSchema = new Schema<IPullRequest>(
   {
+    installationId: {
+      type: Number,
+      required: true,
+      index: true,
+    },
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     repoId: {
       type: String,
       required: true,
@@ -106,7 +118,8 @@ const pullRequestSchema = new Schema<IPullRequest>(
   }
 );
 
-// Add unique compound index on repoId and number
+// Add compound indexes
+pullRequestSchema.index({ installationId: 1, status: 1 });
 pullRequestSchema.index({ repoId: 1, number: 1 }, { unique: true });
 
 // Create model

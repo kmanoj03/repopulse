@@ -3,11 +3,18 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import cors from "cors";
 import webhookRoutes from "./routes/route";
+import githubAuthRoutes from "./routes/githubAuth";
+import prRoutes from "./routes/prRoutes";
+import { printEnvValidation } from "./utils/validateEnv";
 
 // Load environment variables from .env file
 dotenv.config();
 
-import authRoutes from "./routes/auth";
+// Validate environment variables
+if (!printEnvValidation()) {
+  console.error('Server startup failed: Missing required environment variables');
+  process.exit(1);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,6 +63,12 @@ mongoose
 // Webhook routes - GitHub will POST to /webhooks/github
 app.use("/webhooks", webhookRoutes);
 
+// GitHub OAuth routes
+app.use("/auth", githubAuthRoutes);
+
+// PR API routes (protected by JWT)
+app.use("/api", prRoutes);
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
@@ -67,12 +80,12 @@ app.get("/", (req, res) => {
     version: "1.0.0",
     endpoints: {
       webhooks: "/webhooks/github",
-      health: "/healthz",
+      auth: "/auth/github",
+      api: "/api/prs",
+      health: "/health",
     },
   });
 });
-
-app.use("/auth", authRoutes);
 
 // ============================================
 // START SERVER

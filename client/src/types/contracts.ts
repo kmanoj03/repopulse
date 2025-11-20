@@ -32,10 +32,22 @@ export interface PRDoc {
   updatedAt: string;        // ISO string (Date in backend, string in frontend)
 }
 
+export interface Repository {
+  repoFullName: string;
+  repoId: string;
+  prs: PRDoc[];
+}
+
 export interface PRListResponse {
-  items: PRDoc[];
-  total: number;
-  page: number;
-  limit: number;
+  success: boolean;
+  data: {
+    repositories: Repository[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  };
 }
 

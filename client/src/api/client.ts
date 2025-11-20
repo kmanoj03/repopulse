@@ -1,6 +1,6 @@
 import { PRListResponse, PRDoc } from "../types/contracts";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5050";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
 async function apiRequest<T>(
   endpoint: string,
@@ -181,6 +181,7 @@ const mockPRs: PRDoc[] = [
 ];
 
 export interface GetPRsParams {
+  repoId?: string;  // filter by specific repository
   status?: string;  // "open" | "closed" | "merged"
   label?: string;   // one of PRLabel
   q?: string;       // search string
@@ -189,77 +190,67 @@ export interface GetPRsParams {
 }
 
 export async function getPRs(params: GetPRsParams = {}): Promise<PRListResponse> {
-  // Simulate network latency
-  await new Promise(resolve => setTimeout(resolve, 300));
-
-  const {
-    status,
-    label,
-    q,
-    page = 1,
-    limit = 10,
-  } = params;
-
-  let filtered = [...mockPRs];
-
-  // Filter by status
-  if (status && status !== "all") {
-    filtered = filtered.filter(pr => pr.status === status);
+  const { repoId, status, label, q, page = 1, limit = 20 } = params;
+  
+  // Build query string
+  const queryParams = new URLSearchParams();
+  if (repoId) queryParams.append('repoId', repoId);
+  if (status && status !== "all") queryParams.append('status', status);
+  if (label) queryParams.append('label', label);
+  if (q) queryParams.append('q', q);
+  queryParams.append('page', page.toString());
+  queryParams.append('limit', limit.toString());
+  
+  try {
+    const response = await apiRequest<PRListResponse>(`/api/prs?${queryParams.toString()}`);
+    
+    // Return the response as-is (backend already groups by repository)
+    return response;
+  } catch (error) {
+    console.error('Failed to fetch PRs:', error);
+    // Return empty data on error
+    return {
+      success: false,
+      data: {
+        repositories: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          totalPages: 0,
+        },
+      },
+    };
   }
-
-  // Filter by label
-  if (label) {
-    filtered = filtered.filter(pr => 
-      pr.summary.labels.includes(label)
-    );
-  }
-
-  // Filter by search query (title and author)
-  if (q) {
-    const query = q.toLowerCase();
-    filtered = filtered.filter(pr =>
-      pr.title.toLowerCase().includes(query) ||
-      pr.author.toLowerCase().includes(query)
-    );
-  }
-
-  // Pagination
-  const total = filtered.length;
-  const startIndex = (page - 1) * limit;
-  const endIndex = startIndex + limit;
-  const items = filtered.slice(startIndex, endIndex);
-
-  return {
-    items,
-    total,
-    page,
-    limit,
-  };
 }
 
 export async function getPR(id: string): Promise<PRDoc> {
-  // Simulate network latency
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  const pr = mockPRs.find(p => p._id === id);
-  if (!pr) {
+  try {
+    const response = await apiRequest<{
+      success: boolean;
+      data: PRDoc;
+    }>(`/api/prs/${id}`);
+    
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch PR:', error);
     throw new Error(`PR with id ${id} not found`);
   }
-  return pr;
 }
 
 export async function regenerateSummary(id: string): Promise<{ ok: boolean }> {
-  // Simulate network latency
-  await new Promise(resolve => setTimeout(resolve, 1500));
-
-  const pr = mockPRs.find(p => p._id === id);
-  if (pr) {
-    // Update the summary in-memory (tweak the TL;DR)
-    pr.summary.tldr = `[Regenerated] ${pr.summary.tldr}`;
-    pr.summary.createdAt = new Date().toISOString();
-    pr.updatedAt = new Date().toISOString();
+  try {
+    await apiRequest<{
+      success: boolean;
+      message: string;
+    }>(`/api/prs/${id}/regenerate`, {
+      method: 'POST',
+    });
+    
+    return { ok: true };
+  } catch (error) {
+    console.error('Failed to regenerate summary:', error);
+    return { ok: false };
   }
-
-  return { ok: true };
 }
 

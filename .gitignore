@@ -1,31 +1,156 @@
-# ────────────── Node / Backend ──────────────
-node_modules/
-dist/
-build/
+# ============================================
+# Documentation Files
+# ============================================
+*.md
+*.MD
 
-# Logs
-logs/
-*.log
+# ============================================
+# Node.js Dependencies
+# ============================================
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
 
-# Env files (secrets!)
+# ============================================
+# Environment Variables & Secrets
+# ============================================
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*.local
 
-# TypeScript
+# GitHub App Private Keys (CRITICAL - NEVER COMMIT!)
+*.pem
+*.key
+*.p8
+private-key*.pem
+repopulse*.pem
+
+# ============================================
+# Build Outputs
+# ============================================
+dist/
+build/
+out/
 *.tsbuildinfo
 
-# Coverage / tests
-coverage/
-.jest/
+# Client build
+client/dist/
+client/build/
 
-# ────────────── IDE / OS junk ──────────────
+# Server build
+server/dist/
+server/build/
+
+# ============================================
+# Logs
+# ============================================
+*.log
+logs/
+*.log.*
+/tmp/*.log
+server.log
+repopulse-server.log
+
+# ============================================
+# IDE & Editor Files
+# ============================================
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 .DS_Store
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ============================================
+# OS Generated Files
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
+
+# ============================================
+# Testing & Coverage
+# ============================================
+coverage/
+*.lcov
+.nyc_output/
+.jest-cache/
+__tests__/__snapshots__/
+
+# ============================================
+# TypeScript
+# ============================================
+*.tsbuildinfo
+.tsbuildinfo
+
+# ============================================
+# MongoDB
+# ============================================
+data/
+mongodb-data/
+*.mongo
+mongo-data/
+
+# ============================================
+# Temporary Files
+# ============================================
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+.parcel-cache/
+
+# ============================================
+# Package Manager Locks (optional)
+# ============================================
+# Uncomment if you want to ignore lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# ============================================
+# Documentation Builds
+# ============================================
+docs/_build/
+docs/.doctrees/
+
+# ============================================
+# Misc
+# ============================================
+.vercel
+.turbo
+.next/
+*.seed
+*.pid
+*.pid.lock
+
+# ============================================
+# Backup Files
+# ============================================
+*.backup
+*.bak
+*.orig
+*~
+
+# ============================================
+# Local Development Scripts
+# ============================================
+start-server.sh.backup
+*.sh.backup

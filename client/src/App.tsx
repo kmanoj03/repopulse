@@ -2,8 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { LoginPage } from "./pages/LoginPage";
-import { SignupPage } from "./pages/SignupPage";
+import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
 import { PRListPage } from "./pages/PRListPage";
+import { RepoPRsPage } from "./pages/RepoPRsPage";
 import { PRDetailPage } from "./pages/PRDetailPage";
 import { ToastContainer, ToastMessage } from "./components/ToastContainer";
 import { useState } from "react";
@@ -38,12 +39,20 @@ function AppRoutes() {
           }
         />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         <Route
           path="/prs"
           element={
             <ProtectedRoute>
               <PRListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/repos/:repoId/prs"
+          element={
+            <ProtectedRoute>
+              <RepoPRsPage />
             </ProtectedRoute>
           }
         />
