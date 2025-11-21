@@ -28,7 +28,8 @@
     "github/**/*.ts",
     "queues/**/*.ts",
     "workers/**/*.ts",
-    "analysis/**/*.ts"
+    "analysis/**/*.ts",
+    "services/**/*.ts"
   ],
   "exclude": [
     "node_modules",
