@@ -347,18 +347,25 @@ export async function regeneratePRSummary(req: Request, res: Response) {
     await pr.save();
     
     console.log(`🔄 PR ${pr.repoFullName}#${pr.number} queued for regeneration by user ${userId}`);
+    console.log(`   PR ID: ${pr._id.toString()}`);
+    console.log(`   Installation ID: ${pr.installationId}`);
+    console.log(`   Summary status reset to: ${pr.summaryStatus}`);
     
-    // Enqueue PR summary job
+    // Enqueue PR summary job with 'regenerate' name to force processing
     try {
-      await prSummaryQueue.add('generate', {
+      const job = await prSummaryQueue.add('regenerate', {
         pullRequestId: pr._id.toString(),
         installationId: pr.installationId,
         repoFullName: pr.repoFullName,
         number: pr.number,
       });
-      console.log(`   📋 PR summary regeneration job enqueued`);
+      console.log(`   📋 PR summary regeneration job enqueued:`);
+      console.log(`      Job ID: ${job.id}`);
+      console.log(`      Job name: regenerate`);
+      console.log(`      Queue: pr-summary`);
     } catch (queueError: any) {
       console.error(`   ⚠️  Failed to enqueue PR summary job:`, queueError.message);
+      console.error(`   Stack:`, queueError.stack);
       // Return error to user
       return res.status(500).json({ error: 'Failed to queue summary regeneration' });
     }

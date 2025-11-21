@@ -100,7 +100,7 @@ async function main() {
     const worker = new Worker<PrSummaryJobData>(
       "pr-summary",
       async (job: Job<PrSummaryJobData>) => {
-        console.log(`[pr-summary-worker] Received job ${job.id}:`, {
+        console.log(`[pr-summary-worker] Received job ${job.id} (name: ${job.name}):`, {
           pullRequestId: job.data.pullRequestId,
           repoFullName: job.data.repoFullName,
           number: job.data.number,
@@ -118,7 +118,8 @@ async function main() {
         }
 
         // Check if PR is already processed (avoid duplicate work)
-        if (pr.summaryStatus === 'ready' && pr.summary) {
+        // BUT: if job name is 'regenerate', always process it
+        if (job.name !== 'regenerate' && pr.summaryStatus === 'ready' && pr.summary) {
           console.log(`[pr-summary-worker] PR ${pr.repoFullName}#${pr.number} already has a summary, skipping`);
           return;
         }
@@ -201,20 +202,30 @@ async function main() {
     );
 
     // Worker event handlers
+    worker.on("active", (job) => {
+      console.log(`[pr-summary-worker] 🔵 Job ${job.id} (${job.name}) is now active`);
+    });
+
     worker.on("completed", (job) => {
-      console.log(`[pr-summary-worker] ✅ Job ${job.id} completed successfully`);
+      console.log(`[pr-summary-worker] ✅ Job ${job.id} (${job.name}) completed successfully`);
     });
 
     worker.on("failed", (job, err) => {
-      console.error(`[pr-summary-worker] ❌ Job ${job?.id} failed:`, err.message);
+      console.error(`[pr-summary-worker] ❌ Job ${job?.id} (${job?.name}) failed:`, err.message);
       if (job?.data) {
         console.error(`   PR ID: ${job.data.pullRequestId}`);
         console.error(`   Repo: ${job.data.repoFullName}#${job.data.number}`);
       }
+      console.error(`   Error stack:`, err.stack);
     });
 
     worker.on("error", (err) => {
       console.error(`[pr-summary-worker] ❌ Worker error:`, err);
+      console.error(`   Error stack:`, err.stack);
+    });
+
+    worker.on("stalled", (jobId) => {
+      console.warn(`[pr-summary-worker] ⚠️  Job ${jobId} stalled`);
     });
 
     console.log("[pr-summary-worker] ✅ Listening on pr-summary queue");
