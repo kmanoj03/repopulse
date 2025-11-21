@@ -10,6 +10,10 @@ export function Header() {
     navigate("/login");
   };
 
+  const handleRefresh = () => {
+    window.location.reload();
+  };
+
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -34,6 +38,16 @@ export function Header() {
 
           {user && (
             <div className="flex items-center space-x-4">
+              <button
+                onClick={handleRefresh}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Refresh page (Cmd+R)"
+                aria-label="Refresh page"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-900">{user.username}</p>
                 <p className="text-xs text-gray-500">@{user.username}</p>
