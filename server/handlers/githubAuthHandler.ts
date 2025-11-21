@@ -18,7 +18,7 @@ export async function handleGitHubLogin(req: Request, res: Response) {
   const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3000'}/auth/github/callback`;
   
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&scope=read:user,user:email`;
-  
+  console.log('githubAuthUrl', githubAuthUrl);
   res.redirect(githubAuthUrl);
 }
 
@@ -56,7 +56,9 @@ export async function handleGitHubCallback(req: Request, res: Response) {
     );
     
     const accessToken = tokenResponse.data.access_token;
-    
+    console.log('accessToken', accessToken);
+    // console.log('tokenResponse', tokenResponse);
+
     if (!accessToken) {
       return res.redirect(`${FRONTEND_URL}/login?error=no_access_token`);
     }
@@ -67,6 +69,7 @@ export async function handleGitHubCallback(req: Request, res: Response) {
     });
     
     const githubUser = userResponse.data;
+    console.log('githubUser', githubUser);
     
     // 3. Get installations from OUR database (not GitHub API)
     // Installations are stored when webhooks are received
@@ -83,6 +86,7 @@ export async function handleGitHubCallback(req: Request, res: Response) {
     // For now, give user access to all installations
     // TODO: Later, implement proper user-installation association
     const installationIds = installations.map((inst: any) => inst.installationId);
+    console.log('installationIds', installationIds);
     
     // 4. Create/update user
     const User = getUserModel();
