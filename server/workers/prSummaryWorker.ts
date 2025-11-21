@@ -7,6 +7,7 @@ import { PrSummaryJobData } from "../queues/prSummaryQueue";
 import { getInstallationOctokit } from "../github/appClient";
 import { PullRequestSummary } from "../models/pullRequest.model";
 import { analyzePullRequestDeterministic, FileChange } from "../analysis/prDeterministic";
+import { generatePrSummaryWithGemini } from "../llm/geminiClient";
 import { slackNotifyQueue, SlackPrNotificationJobData } from "../queues/slackNotifyQueue";
 import { slackConfig } from "../config/slackConfig";
 
@@ -26,7 +27,7 @@ async function initMongo() {
 
 /**
  * Fetch PR data and files from GitHub
- * 
+ *
  * @param jobData - Job data containing PR information
  * @returns Object containing filesChanged array and PR data
  */
@@ -93,7 +94,7 @@ async function fetchPRData(jobData: PrSummaryJobData): Promise<{
  */
 async function main() {
   console.log("[pr-summary-worker] Starting PR Summary Worker...");
-  
+
   try {
     // Initialize MongoDB connection
     await initMongo();
@@ -125,14 +126,12 @@ async function main() {
         // Check if PR is already processed (avoid duplicate work)
         // BUT: if job name is 'regenerate', always process it
         if (job.name !== 'regenerate' && pr.summaryStatus === 'ready' && pr.summary) {
-          console.log(`[pr-summary-worker] PR ${pr.repoFullName}#${pr.number} already has a summary, skipping`);
+          console.log(`[pr-summary-worker] PR ${pr.repoFullName}#${pr.number} already has a summary, skipping`
+          );
           return;
         }
 
         try {
-          // Update status to processing (optional - you could add a 'processing' status)
-          // For now, we'll keep it as 'pending' until it's done
-
           // Fetch PR data and files from GitHub
           const { filesChanged, prData } = await fetchPRData(job.data);
 
@@ -151,61 +150,139 @@ async function main() {
             pr.diffStats = deterministic.diffStats;
 
             console.log(`[pr-summary-worker] ✅ Deterministic analysis completed:`);
-            console.log(`   Labels: ${deterministic.systemLabels.join(", ") || "none"}`);
-            console.log(`   Risk flags: ${deterministic.riskFlags.join(", ") || "none"}`);
+            console.log(
+              `   Labels: ${deterministic.systemLabels.join(", ") || "none"}`
+            );
+            console.log(
+              `   Risk flags: ${deterministic.riskFlags.join(", ") || "none"}`
+            );
             console.log(`   Risk score: ${deterministic.riskScore}`);
-            console.log(`   Diff stats: +${deterministic.diffStats.totalAdditions} / -${deterministic.diffStats.totalDeletions} (${deterministic.diffStats.changedFilesCount} files)`);
+            console.log(
+              `   Diff stats: +${deterministic.diffStats.totalAdditions} / -${deterministic.diffStats.totalDeletions} (${deterministic.diffStats.changedFilesCount} files)`
+            );
           } catch (deterministicError: any) {
             // Log but don't fail the job if deterministic analysis fails
-            console.error(`[pr-summary-worker] ⚠️ Deterministic analysis failed:`, deterministicError.message);
+            console.error(
+              `[pr-summary-worker] ⚠️ Deterministic analysis failed:`,
+              deterministicError.message
+            );
             console.error(`   Stack:`, deterministicError.stack);
             // Continue with summary generation even if deterministic analysis fails
           }
 
-          // Generate summary (stub for now, will be replaced with LLM in Phase 2 & 3)
-          const stubSummary: PullRequestSummary = {
-            tldr: `Stub summary for PR #${job.data.number}: "${prData.title}". This PR has ${filesChanged.length} file(s) changed with ${prData.additions} additions and ${prData.deletions} deletions.`,
-            risks: ["Risk analysis not implemented yet."],
-            labels: ["stub-summary"],
-            createdAt: new Date(),
-          };
+          // Generate summary with Gemini
+          try {
+            console.log("[pr-summary-worker] Building LLM input...");
 
-          // Update PR with summary and save everything at once
-          pr.summary = stubSummary;
-          pr.summaryStatus = "ready";
-          pr.summaryError = null;
-          pr.lastSummarizedAt = new Date();
-          
-          // Save all updates (deterministic analysis + summary) in one operation
-          await pr.save();
+            const filesSummary = filesChanged.slice(0, 20).map((f) => ({
+              filename: f.filename,
+              additions: f.additions || 0,
+              deletions: f.deletions || 0,
+            }));
 
-          console.log(`[pr-summary-worker] ✅ Summary updated for PR ${pr.repoFullName}#${pr.number} (ID: ${pullRequestId})`);
+            const patchSnippets: string[] = [];
+            for (const file of filesChanged) {
+              if (!file.patch) continue;
+              if (patchSnippets.length >= 5) break; // top 5 patches
+              patchSnippets.push(file.patch.slice(0, 1000)); // truncate to avoid huge prompts
+            }
 
-          // Reload PR to get latest data (including deterministic analysis fields)
+            const deterministic = {
+              systemLabels: pr.systemLabels || [],
+              riskFlags: pr.riskFlags || [],
+              riskScore: pr.riskScore ?? 0,
+              diffStats:
+                pr.diffStats || {
+                  totalAdditions: prData.additions,
+                  totalDeletions: prData.deletions,
+                  changedFilesCount: filesChanged.length,
+                },
+            };
+
+            const llmInput = {
+              prTitle: prData.title || "",
+              prBody: prData.body || "",
+              repoFullName: pr.repoFullName,
+              number: pr.number,
+              author: pr.author,
+              branchFrom: pr.branchFrom,
+              branchTo: pr.branchTo,
+              filesSummary,
+              patchSnippets,
+              systemLabels: deterministic.systemLabels,
+              riskFlags: deterministic.riskFlags,
+              riskScore: deterministic.riskScore,
+              diffStats: deterministic.diffStats,
+            };
+
+            console.log("[pr-summary-worker] Calling Gemini for PR", pr.number);
+
+            const llmSummary = await generatePrSummaryWithGemini(llmInput);
+
+            const summary: PullRequestSummary = {
+              tldr: llmSummary.tldr,
+              risks: llmSummary.risks,
+              labels: llmSummary.labels,
+              createdAt: new Date(),
+            };
+
+            pr.summary = summary;
+            pr.summaryStatus = "ready";
+            pr.summaryError = null;
+            pr.lastSummarizedAt = new Date();
+
+            await pr.save();
+
+            console.log(
+              `[pr-summary-worker] ✅ Gemini summary generated and saved for PR ${pr.repoFullName}#${pr.number} (ID: ${pullRequestId})`
+            );
+          } catch (e: any) {
+            console.error(
+              "[pr-summary-worker] ❌ Gemini summary failed:",
+              e?.message || e
+            );
+
+            // fallback behaviour — mark error
+            pr.summaryStatus = "error";
+            pr.summaryError = String(e?.message || e).slice(0, 500);
+            await pr.save();
+          }
+
+          // Reload PR to get latest data (including deterministic analysis fields & summary)
           const updatedPr = await PullRequest.findById(pullRequestId).lean();
 
           if (!updatedPr) {
-            console.warn(`[pr-summary-worker] Could not reload PR ${pullRequestId} for Slack notification`);
+            console.warn(
+              `[pr-summary-worker] Could not reload PR ${pullRequestId} for Slack notification`
+            );
           } else {
             // Determine if we should notify Slack
-            const becameReadyNow = !wasSummaryReady && updatedPr.summaryStatus === "ready";
+            const becameReadyNow =
+              !wasSummaryReady && updatedPr.summaryStatus === "ready";
             const riskScore = updatedPr.riskScore ?? 0;
             const riskFlags = updatedPr.riskFlags ?? [];
             const systemLabels = updatedPr.systemLabels ?? [];
-            
+
             const isHighRisk = riskScore >= slackConfig.riskThreshold;
             const hasSecretsFlag = riskFlags.includes("secrets-suspected");
-            
-            const shouldNotifySlack = slackConfig.enabled && (becameReadyNow || isHighRisk || hasSecretsFlag);
+
+            const shouldNotifySlack =
+              slackConfig.enabled &&
+              (becameReadyNow || isHighRisk || hasSecretsFlag);
 
             if (shouldNotifySlack) {
               // Build conditions that triggered notification
               const conditions: string[] = [];
               if (becameReadyNow) conditions.push("summary became ready");
-              if (isHighRisk) conditions.push(`high risk (score ${riskScore} >= ${slackConfig.riskThreshold})`);
+              if (isHighRisk)
+                conditions.push(
+                  `high risk (score ${riskScore} >= ${slackConfig.riskThreshold})`
+                );
               if (hasSecretsFlag) conditions.push("secrets suspected");
 
-              console.log(`[pr-summary-worker] 📢 Enqueueing Slack notification for PR ${updatedPr.repoFullName}#${updatedPr.number}`);
+              console.log(
+                `[pr-summary-worker] 📢 Enqueueing Slack notification for PR ${updatedPr.repoFullName}#${updatedPr.number}`
+              );
               console.log(`   Triggered by: ${conditions.join(", ")}`);
 
               // Build GitHub PR URL
@@ -237,17 +314,27 @@ async function main() {
               // Enqueue Slack notification job (don't block on this)
               try {
                 await slackNotifyQueue.add("pr-notification", slackJobData);
-                console.log(`[pr-summary-worker] ✅ Slack notification job enqueued`);
+                console.log(
+                  `[pr-summary-worker] ✅ Slack notification job enqueued`
+                );
               } catch (slackError: any) {
                 // Log but don't fail the main job if Slack enqueueing fails
-                console.error(`[pr-summary-worker] ⚠️ Failed to enqueue Slack notification:`, slackError.message);
+                console.error(
+                  `[pr-summary-worker] ⚠️ Failed to enqueue Slack notification:`,
+                  slackError.message
+                );
               }
             } else if (slackConfig.enabled) {
-              console.log(`[pr-summary-worker] ℹ️ Slack notifications enabled but conditions not met (ready: ${becameReadyNow}, highRisk: ${isHighRisk}, secrets: ${hasSecretsFlag})`);
+              console.log(
+                `[pr-summary-worker] ℹ️ Slack notifications enabled but conditions not met (ready: ${becameReadyNow}, highRisk: ${isHighRisk}, secrets: ${hasSecretsFlag})`
+              );
             }
           }
         } catch (err: any) {
-          console.error(`[pr-summary-worker] ❌ Error summarizing PR ${pr.repoFullName}#${pr.number}:`, err.message);
+          console.error(
+            `[pr-summary-worker] ❌ Error summarizing PR ${pr.repoFullName}#${pr.number}:`,
+            err.message
+          );
           console.error(`   Stack:`, err.stack);
 
           // Update PR with error status
@@ -268,18 +355,27 @@ async function main() {
 
     // Worker event handlers
     worker.on("active", (job) => {
-      console.log(`[pr-summary-worker] 🔵 Job ${job.id} (${job.name}) is now active`);
+      console.log(
+        `[pr-summary-worker] 🔵 Job ${job.id} (${job.name}) is now active`
+      );
     });
 
     worker.on("completed", (job) => {
-      console.log(`[pr-summary-worker] ✅ Job ${job.id} (${job.name}) completed successfully`);
+      console.log(
+        `[pr-summary-worker] ✅ Job ${job.id} (${job.name}) completed successfully`
+      );
     });
 
     worker.on("failed", (job, err) => {
-      console.error(`[pr-summary-worker] ❌ Job ${job?.id} (${job?.name}) failed:`, err.message);
+      console.error(
+        `[pr-summary-worker] ❌ Job ${job?.id} (${job?.name}) failed:`,
+        err.message
+      );
       if (job?.data) {
         console.error(`   PR ID: ${job.data.pullRequestId}`);
-        console.error(`   Repo: ${job.data.repoFullName}#${job.data.number}`);
+        console.error(
+          `   Repo: ${job.data.repoFullName}#${job.data.number}`
+        );
       }
       console.error(`   Error stack:`, err.stack);
     });
@@ -320,4 +416,3 @@ main().catch((err) => {
   console.error("[pr-summary-worker] ❌ Fatal error in main:", err);
   process.exit(1);
 });
-
