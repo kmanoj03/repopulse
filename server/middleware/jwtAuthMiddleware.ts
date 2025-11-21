@@ -12,11 +12,19 @@ export async function jwtAuthMiddleware(
   res: Response,
   next: NextFunction
 ) {
+  // Log all requests to PR routes for debugging
+  if (req.path.includes('/prs/') && req.method === 'POST') {
+    console.log(`🔐 [jwtAuthMiddleware] Authenticating ${req.method} ${req.path}`);
+  }
+  
   try {
     // Extract token from Authorization header
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      if (req.path.includes('/prs/') && req.method === 'POST') {
+        console.error(`   ❌ No token provided for ${req.path}`);
+      }
       return res.status(401).json({ error: 'No token provided' });
     }
     

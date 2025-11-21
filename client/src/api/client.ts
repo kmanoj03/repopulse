@@ -239,18 +239,22 @@ export async function getPR(id: string): Promise<PRDoc> {
 }
 
 export async function regenerateSummary(id: string): Promise<{ ok: boolean }> {
+  console.log(`[Frontend] Calling regenerateSummary for PR ID: ${id}`);
   try {
-    await apiRequest<{
+    const response = await apiRequest<{
       success: boolean;
       message: string;
     }>(`/api/prs/${id}/regenerate`, {
       method: 'POST',
     });
     
+    console.log(`[Frontend] Regenerate response:`, response);
     return { ok: true };
-  } catch (error) {
-    console.error('Failed to regenerate summary:', error);
-    return { ok: false };
+  } catch (error: any) {
+    console.error('[Frontend] Failed to regenerate summary:', error);
+    console.error('   Error message:', error.message);
+    console.error('   Error stack:', error.stack);
+    throw error; // Re-throw so the UI can handle it
   }
 }
 

@@ -43,9 +43,11 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
   const handleRegenerateSummary = async () => {
     if (!id) return;
 
+    console.log(`[PRDetailPage] Regenerate button clicked for PR ID: ${id}`);
     setRegenerating(true);
     try {
       await regenerateSummary(id);
+      console.log(`[PRDetailPage] Regenerate request successful`);
       onToast({
         id: Date.now().toString(),
         message: "Summary regeneration queued",
@@ -81,11 +83,12 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
           }
         }
       }, 2000);
-    } catch (error) {
-      console.error("Failed to regenerate summary:", error);
+    } catch (error: any) {
+      console.error("[PRDetailPage] Failed to regenerate summary:", error);
+      console.error("   Error message:", error?.message);
       onToast({
         id: Date.now().toString(),
-        message: "Failed to regenerate summary",
+        message: error?.message || "Failed to regenerate summary",
         type: "error",
       });
       setRegenerating(false);
