@@ -67,3 +67,4 @@ export function getUserModel(): Model<IUser> {
 const User = getUserModel();
 export default User;
 
+
