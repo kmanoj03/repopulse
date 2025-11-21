@@ -139,19 +139,11 @@ async function main() {
               filesChanged,
             });
 
-            // Update PR with deterministic analysis results
-            await PullRequest.findByIdAndUpdate(
-              pullRequestId,
-              {
-                $set: {
-                  systemLabels: deterministic.systemLabels,
-                  riskFlags: deterministic.riskFlags,
-                  riskScore: deterministic.riskScore,
-                  diffStats: deterministic.diffStats,
-                },
-              },
-              { new: true }
-            );
+            // Update PR object with deterministic analysis results
+            pr.systemLabels = deterministic.systemLabels;
+            pr.riskFlags = deterministic.riskFlags;
+            pr.riskScore = deterministic.riskScore;
+            pr.diffStats = deterministic.diffStats;
 
             console.log(`[pr-summary-worker] ✅ Deterministic analysis completed:`);
             console.log(`   Labels: ${deterministic.systemLabels.join(", ") || "none"}`);
@@ -173,11 +165,13 @@ async function main() {
             createdAt: new Date(),
           };
 
-          // Update PR with summary
+          // Update PR with summary and save everything at once
           pr.summary = stubSummary;
           pr.summaryStatus = "ready";
           pr.summaryError = null;
           pr.lastSummarizedAt = new Date();
+          
+          // Save all updates (deterministic analysis + summary) in one operation
           await pr.save();
 
           console.log(`[pr-summary-worker] ✅ Summary updated for PR ${pr.repoFullName}#${pr.number} (ID: ${pullRequestId})`);
