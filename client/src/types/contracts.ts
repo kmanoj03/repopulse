@@ -15,6 +15,8 @@ export interface PRFileChange {
   deletions: number;
 }
 
+export type SummaryStatus = "pending" | "ready" | "error";
+
 export interface PRDoc {
   _id: string;              // MongoDB _id as string
   repoId: string;           // Changed from number to string to match Mongoose model
@@ -26,7 +28,10 @@ export interface PRDoc {
   branchTo: string;
   status: string;           // "open" | "closed" | "merged" (matches Mongoose enum)
   filesChanged: PRFileChange[];
-  summary: PRSummary;       // Required (not optional) to match Mongoose model
+  summary: PRSummary | null; // Nullable - will be populated when summary is generated
+  summaryStatus: SummaryStatus; // "pending" | "ready" | "error"
+  summaryError: string | null;  // Error message if summary generation failed
+  lastSummarizedAt: string | null; // ISO string (Date in backend, string in frontend)
   slackMessageTs: string | null;  // Changed from optional to string | null
   createdAt: string;        // ISO string (Date in backend, string in frontend)
   updatedAt: string;        // ISO string (Date in backend, string in frontend)

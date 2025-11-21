@@ -1,5 +1,15 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
+// Type definitions for summary status
+export type SummaryStatus = 'pending' | 'ready' | 'error';
+
+export interface PullRequestSummary {
+  tldr: string;
+  risks: string[];      // human readable risk bullets from LLM
+  labels: string[];     // semantic tags from LLM
+  createdAt: Date;
+}
+
 // TypeScript interface
 export interface IPullRequest extends Document {
   installationId: number;
@@ -17,12 +27,10 @@ export interface IPullRequest extends Document {
     additions: number;
     deletions: number;
   }>;
-  summary: {
-    tldr: string;
-    risks: string[];
-    labels: string[];
-    createdAt: Date;
-  };
+  summary: PullRequestSummary | null;
+  summaryStatus: SummaryStatus;
+  summaryError: string | null;
+  lastSummarizedAt: Date | null;
   slackMessageTs: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -91,22 +99,26 @@ const pullRequestSchema = new Schema<IPullRequest>(
       },
     ],
     summary: {
-      tldr: {
-        type: String,
-        required: true,
+      type: {
+        tldr: { type: String },
+        risks: { type: [String], default: [] },
+        labels: { type: [String], default: [] },
+        createdAt: { type: Date },
       },
-      risks: {
-        type: [String],
-        required: true,
-      },
-      labels: {
-        type: [String],
-        required: true,
-      },
-      createdAt: {
-        type: Date,
-        required: true,
-      },
+      default: null,
+    },
+    summaryStatus: {
+      type: String,
+      enum: ['pending', 'ready', 'error'],
+      default: 'pending',
+    },
+    summaryError: {
+      type: String,
+      default: null,
+    },
+    lastSummarizedAt: {
+      type: Date,
+      default: null,
     },
     slackMessageTs: {
       type: String,

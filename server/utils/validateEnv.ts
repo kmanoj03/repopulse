@@ -32,6 +32,9 @@ export function validateEnvironment(): EnvValidationResult {
     'FRONTEND_URL',
     'BACKEND_URL',
     'GITHUB_WEBHOOK_SECRET',
+    'REDIS_HOST',
+    'REDIS_PORT',
+    'REDIS_PASSWORD',
   ];
 
   const missing: string[] = [];

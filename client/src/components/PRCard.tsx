@@ -37,7 +37,7 @@ export function PRCard({ pr }: PRCardProps) {
         </span>
       </div>
 
-      {pr.summary.labels && pr.summary.labels.length > 0 && (
+      {pr.summary?.labels && pr.summary.labels.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">
           {pr.summary.labels.map((label) => (
             <span
@@ -47,6 +47,22 @@ export function PRCard({ pr }: PRCardProps) {
               {label}
             </span>
           ))}
+        </div>
+      )}
+      
+      {pr.summaryStatus === "pending" && (
+        <div className="mb-3">
+          <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+            Summary pending...
+          </span>
+        </div>
+      )}
+      
+      {pr.summaryStatus === "error" && (
+        <div className="mb-3">
+          <span className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full">
+            Summary error
+          </span>
         </div>
       )}
 

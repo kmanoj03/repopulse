@@ -25,7 +25,9 @@
     "utils/**/*.ts",
     "config/**/*.ts",
     "types/**/*.ts",
-    "github/**/*.ts"
+    "github/**/*.ts",
+    "queues/**/*.ts",
+    "workers/**/*.ts"
   ],
   "exclude": [
     "node_modules",
