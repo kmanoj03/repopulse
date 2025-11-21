@@ -8,6 +8,7 @@ import prRoutes from "./routes/prRoutes";
 import meRoutes from "./routes/meRoutes";
 import githubAppRoutes from "./routes/githubAppRoutes";
 import { printEnvValidation } from "./utils/validateEnv";
+import { assertSlackConfig } from "./config/slackConfig";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -15,6 +16,15 @@ dotenv.config();
 // Validate environment variables
 if (!printEnvValidation()) {
   console.error('Server startup failed: Missing required environment variables');
+  process.exit(1);
+}
+
+// Validate Slack configuration
+try {
+  assertSlackConfig();
+  console.log('✅ Slack configuration validated');
+} catch (error) {
+  console.error('❌ Slack configuration error:', (error as Error).message);
   process.exit(1);
 }
 
