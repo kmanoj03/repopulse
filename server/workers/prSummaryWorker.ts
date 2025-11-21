@@ -7,6 +7,8 @@ import { PrSummaryJobData } from "../queues/prSummaryQueue";
 import { getInstallationOctokit } from "../github/appClient";
 import { PullRequestSummary } from "../models/pullRequest.model";
 import { analyzePullRequestDeterministic, FileChange } from "../analysis/prDeterministic";
+import { slackNotifyQueue, SlackPrNotificationJobData } from "../queues/slackNotifyQueue";
+import { slackConfig } from "../config/slackConfig";
 
 /**
  * Initialize MongoDB connection
@@ -117,6 +119,9 @@ async function main() {
           throw new Error(`PR not found: ${pullRequestId}`);
         }
 
+        // Track if summary was already ready (for Slack notification logic)
+        const wasSummaryReady = pr.summaryStatus === "ready";
+
         // Check if PR is already processed (avoid duplicate work)
         // BUT: if job name is 'regenerate', always process it
         if (job.name !== 'regenerate' && pr.summaryStatus === 'ready' && pr.summary) {
@@ -175,6 +180,72 @@ async function main() {
           await pr.save();
 
           console.log(`[pr-summary-worker] ✅ Summary updated for PR ${pr.repoFullName}#${pr.number} (ID: ${pullRequestId})`);
+
+          // Reload PR to get latest data (including deterministic analysis fields)
+          const updatedPr = await PullRequest.findById(pullRequestId).lean();
+
+          if (!updatedPr) {
+            console.warn(`[pr-summary-worker] Could not reload PR ${pullRequestId} for Slack notification`);
+          } else {
+            // Determine if we should notify Slack
+            const becameReadyNow = !wasSummaryReady && updatedPr.summaryStatus === "ready";
+            const riskScore = updatedPr.riskScore ?? 0;
+            const riskFlags = updatedPr.riskFlags ?? [];
+            const systemLabels = updatedPr.systemLabels ?? [];
+            
+            const isHighRisk = riskScore >= slackConfig.riskThreshold;
+            const hasSecretsFlag = riskFlags.includes("secrets-suspected");
+            
+            const shouldNotifySlack = slackConfig.enabled && (becameReadyNow || isHighRisk || hasSecretsFlag);
+
+            if (shouldNotifySlack) {
+              // Build conditions that triggered notification
+              const conditions: string[] = [];
+              if (becameReadyNow) conditions.push("summary became ready");
+              if (isHighRisk) conditions.push(`high risk (score ${riskScore} >= ${slackConfig.riskThreshold})`);
+              if (hasSecretsFlag) conditions.push("secrets suspected");
+
+              console.log(`[pr-summary-worker] 📢 Enqueueing Slack notification for PR ${updatedPr.repoFullName}#${updatedPr.number}`);
+              console.log(`   Triggered by: ${conditions.join(", ")}`);
+
+              // Build GitHub PR URL
+              const htmlUrl = `https://github.com/${updatedPr.repoFullName}/pull/${updatedPr.number}`;
+
+              // Build dashboard URL if FRONTEND_BASE_URL is set
+              const dashboardUrl = process.env.FRONTEND_BASE_URL
+                ? `${process.env.FRONTEND_BASE_URL}/prs/${updatedPr._id.toString()}`
+                : undefined;
+
+              // Get TL;DR from summary
+              const tldr = updatedPr.summary?.tldr || "No summary available";
+
+              // Build Slack notification job data
+              const slackJobData: SlackPrNotificationJobData = {
+                pullRequestId: updatedPr._id.toString(),
+                repoFullName: updatedPr.repoFullName,
+                number: updatedPr.number,
+                title: updatedPr.title,
+                author: updatedPr.author,
+                tldr: tldr,
+                riskScore: riskScore,
+                mainRiskFlags: riskFlags,
+                systemLabels: systemLabels,
+                htmlUrl: htmlUrl,
+                dashboardUrl: dashboardUrl,
+              };
+
+              // Enqueue Slack notification job (don't block on this)
+              try {
+                await slackNotifyQueue.add("pr-notification", slackJobData);
+                console.log(`[pr-summary-worker] ✅ Slack notification job enqueued`);
+              } catch (slackError: any) {
+                // Log but don't fail the main job if Slack enqueueing fails
+                console.error(`[pr-summary-worker] ⚠️ Failed to enqueue Slack notification:`, slackError.message);
+              }
+            } else if (slackConfig.enabled) {
+              console.log(`[pr-summary-worker] ℹ️ Slack notifications enabled but conditions not met (ready: ${becameReadyNow}, highRisk: ${isHighRisk}, secrets: ${hasSecretsFlag})`);
+            }
+          }
         } catch (err: any) {
           console.error(`[pr-summary-worker] ❌ Error summarizing PR ${pr.repoFullName}#${pr.number}:`, err.message);
           console.error(`   Stack:`, err.stack);
