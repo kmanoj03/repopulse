@@ -4,6 +4,7 @@ import { getUserModel } from '../models/User';
 import { getPullRequestModel } from '../models/pullRequest.model';
 import { getPRFiles } from '../utils/githubAppAuth';
 import { syncOrgMembersToInstallation } from '../utils/orgMembers';
+import { prSummaryQueue } from '../queues/prSummaryQueue';
 
 // ============================================
 // INSTALLATION WEBHOOKS
@@ -285,12 +286,10 @@ export async function handlePROpened(req: Request, res: Response) {
         additions: f.additions,
         deletions: f.deletions,
       })),
-      summary: {
-        tldr: 'Analysis pending...',
-        risks: [],
-        labels: [],
-        createdAt: new Date(),
-      },
+      summary: null, // Will be populated when summary is generated
+      summaryStatus: 'pending', // PR is created, summary not yet generated
+      summaryError: null,
+      lastSummarizedAt: null,
     });
     
     console.log(`✅ PR ${pr.repoFullName}#${pr.number} saved`);
@@ -299,7 +298,19 @@ export async function handlePROpened(req: Request, res: Response) {
     console.log(`   Author: ${pr.author}`);
     console.log(`   Files: ${pr.filesChanged.length}`);
     
-    // TODO: Enqueue for AI analysis (next phase)
+    // Enqueue PR summary job
+    try {
+      await prSummaryQueue.add('generate', {
+        pullRequestId: pr._id.toString(),
+        installationId: pr.installationId,
+        repoFullName: pr.repoFullName,
+        number: pr.number,
+      });
+      console.log(`   📋 PR summary job enqueued`);
+    } catch (queueError: any) {
+      console.error(`   ⚠️  Failed to enqueue PR summary job:`, queueError.message);
+      // Don't fail the webhook - PR is saved, summary can be generated later
+    }
     
     res.status(200).json({ success: true, prId: pr._id });
   } catch (error: any) {
@@ -362,39 +373,39 @@ export async function handlePRSynchronized(req: Request, res: Response) {
     }
     
     // Update PR (or create if it doesn't exist)
+    const updateData: any = {
+      $set: {
+        title: pull_request.title,
+        author: pull_request.user.login,
+        branchFrom: pull_request.head.ref,
+        branchTo: pull_request.base.ref,
+        status: pull_request.state,
+        filesChanged: files.map((f: any) => ({
+          filename: f.filename,
+          additions: f.additions,
+          deletions: f.deletions,
+        })),
+      },
+      $setOnInsert: {
+        installationId: installation.id,
+        userId: linkedUserId,
+        repoId: repository.id.toString(),
+        repoFullName: repository.full_name,
+        number: pull_request.number,
+        summary: null,
+        summaryStatus: 'pending',
+        summaryError: null,
+        lastSummarizedAt: null,
+      },
+    };
+
     const pr = await PullRequest.findOneAndUpdate(
       { 
         installationId: installation.id,
         repoId: repository.id.toString(), 
         number: pull_request.number 
       },
-      {
-        $set: {
-          title: pull_request.title,
-          author: pull_request.user.login,
-          branchFrom: pull_request.head.ref,
-          branchTo: pull_request.base.ref,
-          status: pull_request.state,
-          filesChanged: files.map((f: any) => ({
-            filename: f.filename,
-            additions: f.additions,
-            deletions: f.deletions,
-          })),
-          summary: {
-            tldr: 'Analysis pending...',
-            risks: [],
-            labels: [],
-            createdAt: new Date(),
-          },
-        },
-        $setOnInsert: {
-          installationId: installation.id,
-          userId: linkedUserId,
-          repoId: repository.id.toString(),
-          repoFullName: repository.full_name,
-          number: pull_request.number,
-        },
-      },
+      updateData,
       { upsert: true, new: true }
     );
     
@@ -402,7 +413,21 @@ export async function handlePRSynchronized(req: Request, res: Response) {
     const wasNew = !existing;
     console.log(`✅ PR ${pr.repoFullName}#${pr.number} ${wasNew ? 'created' : 'updated'} (synchronized/edited)`);
     
-    // TODO: Enqueue for AI analysis (next phase)
+    // Enqueue PR summary job (only if it's a new PR or if summary is pending)
+    if (wasNew || pr.summaryStatus === 'pending') {
+      try {
+        await prSummaryQueue.add('generate', {
+          pullRequestId: pr._id.toString(),
+          installationId: pr.installationId,
+          repoFullName: pr.repoFullName,
+          number: pr.number,
+        });
+        console.log(`   📋 PR summary job enqueued`);
+      } catch (queueError: any) {
+        console.error(`   ⚠️  Failed to enqueue PR summary job:`, queueError.message);
+        // Don't fail the webhook - PR is saved, summary can be generated later
+      }
+    }
     
     res.status(200).json({ success: true, prId: pr._id });
   } catch (error) {
@@ -454,10 +479,14 @@ export async function handlePRReopened(req: Request, res: Response) {
   try {
     const PullRequest = getPullRequestModel();
     
-    // Update PR
+    // Update PR and reset summary status to pending
     const pr = await PullRequest.findOneAndUpdate(
       { repoId: repository.id.toString(), number: pull_request.number },
-      { status: 'open' },
+      { 
+        status: 'open',
+        summaryStatus: 'pending',
+        summaryError: null,
+      },
       { new: true }
     );
     
@@ -466,6 +495,20 @@ export async function handlePRReopened(req: Request, res: Response) {
     }
     
     console.log(`✅ PR ${pr.repoFullName}#${pr.number} reopened`);
+    
+    // Enqueue PR summary job when PR is reopened
+    try {
+      await prSummaryQueue.add('generate', {
+        pullRequestId: pr._id.toString(),
+        installationId: pr.installationId,
+        repoFullName: pr.repoFullName,
+        number: pr.number,
+      });
+      console.log(`   📋 PR summary job enqueued`);
+    } catch (queueError: any) {
+      console.error(`   ⚠️  Failed to enqueue PR summary job:`, queueError.message);
+      // Don't fail the webhook - PR is reopened, summary can be generated later
+    }
     
     res.status(200).json({ success: true, prId: pr._id });
   } catch (error) {

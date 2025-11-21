@@ -149,48 +149,69 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
             </button>
           </div>
 
-          <div className="mb-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">TL;DR</h3>
-            <p className="text-gray-900">{pr.summary.tldr}</p>
-          </div>
-
-          {pr.summary.risks.length > 0 && (
-            <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Risks</h3>
-              <div className="flex flex-wrap gap-2">
-                {pr.summary.risks.map((risk) => (
-                  <span
-                    key={risk}
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      riskColors[risk] || riskColors.default
-                    }`}
-                  >
-                    {risk}
-                  </span>
-                ))}
-              </div>
+          {pr.summaryStatus === "pending" && (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800 text-sm">
+                ⏳ Summary is being generated. Please check back in a moment.
+              </p>
             </div>
           )}
 
-          {pr.summary.labels.length > 0 && (
-            <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Labels</h3>
-              <div className="flex flex-wrap gap-2">
-                {pr.summary.labels.map((label) => (
-                  <span
-                    key={label}
-                    className="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium"
-                  >
-                    {label}
-                  </span>
-                ))}
-              </div>
+          {pr.summaryStatus === "error" && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-800 text-sm font-medium mb-1">❌ Summary generation failed</p>
+              {pr.summaryError && (
+                <p className="text-red-700 text-xs">{pr.summaryError}</p>
+              )}
             </div>
           )}
 
-          <div className="text-xs text-gray-500">
-            Summary generated at {formatDate(pr.summary.createdAt)}
-          </div>
+          {pr.summaryStatus === "ready" && pr.summary && (
+            <>
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">TL;DR</h3>
+                <p className="text-gray-900">{pr.summary.tldr}</p>
+              </div>
+
+              {pr.summary.risks.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Risks</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {pr.summary.risks.map((risk) => (
+                      <span
+                        key={risk}
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          riskColors[risk] || riskColors.default
+                        }`}
+                      >
+                        {risk}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {pr.summary.labels.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Labels</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {pr.summary.labels.map((label) => (
+                      <span
+                        key={label}
+                        className="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="text-xs text-gray-500">
+                Summary generated at {formatDate(pr.summary.createdAt)}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Files Table */}

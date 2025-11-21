@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { getPullRequestModel } from '../models/pullRequest.model';
 import { getInstallationModel } from '../models/Installation';
 import { getUserModel } from '../models/User';
+import { prSummaryQueue } from '../queues/prSummaryQueue';
 
 /**
  * GET /api/prs
@@ -337,18 +338,30 @@ export async function regeneratePRSummary(req: Request, res: Response) {
     
     // Update userId to track who triggered regeneration
     pr.userId = userId;
-    pr.summary = {
-      tldr: 'Regenerating summary...',
-      risks: [],
-      labels: [],
-      createdAt: new Date(),
-    };
+    // Reset summary status to pending when regenerating
+    pr.summary = null;
+    pr.summaryStatus = 'pending';
+    pr.summaryError = null;
+    pr.lastSummarizedAt = null;
     
     await pr.save();
     
     console.log(`🔄 PR ${pr.repoFullName}#${pr.number} queued for regeneration by user ${userId}`);
     
-    // TODO: Enqueue for AI analysis
+    // Enqueue PR summary job
+    try {
+      await prSummaryQueue.add('generate', {
+        pullRequestId: pr._id.toString(),
+        installationId: pr.installationId,
+        repoFullName: pr.repoFullName,
+        number: pr.number,
+      });
+      console.log(`   📋 PR summary regeneration job enqueued`);
+    } catch (queueError: any) {
+      console.error(`   ⚠️  Failed to enqueue PR summary job:`, queueError.message);
+      // Return error to user
+      return res.status(500).json({ error: 'Failed to queue summary regeneration' });
+    }
     
     res.json({
       success: true,
