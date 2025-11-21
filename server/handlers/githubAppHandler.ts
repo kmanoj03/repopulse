@@ -19,11 +19,6 @@ export async function getInstallUrl(req: Request, res: Response) {
     }
 
     const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG || 'repopulse272';
-    let APP_BASE_URL = process.env.APP_BASE_URL || process.env.BACKEND_URL || 'http://localhost:3000';
-    const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
-
-    // Remove trailing slash from APP_BASE_URL to avoid double slashes
-    APP_BASE_URL = APP_BASE_URL.replace(/\/+$/, '');
 
     // Generate state token
     const stateToken = signState({
@@ -31,26 +26,13 @@ export async function getInstallUrl(req: Request, res: Response) {
       purpose: 'github_app_install',
     });
 
-    // Build install URL
-    const redirectUrl = `${APP_BASE_URL}/api/github/app/setup`;
-    const installUrl = `https://github.com/apps/${GITHUB_APP_SLUG}/installations/new?redirect_url=${encodeURIComponent(redirectUrl)}&state=${encodeURIComponent(stateToken)}`;
+    // Build install URL (no redirect_url needed - we use polling approach)
+    const installUrl = `https://github.com/apps/${GITHUB_APP_SLUG}/installations/new?state=${encodeURIComponent(stateToken)}`;
 
     console.log('🔵 Generated install URL:');
-    console.log('   APP_BASE_URL:', APP_BASE_URL);
-    console.log('   Redirect URL:', redirectUrl);
     console.log('   Full Install URL:', installUrl);
     console.log('   State token (first 20 chars):', stateToken.substring(0, 20) + '...');
-    console.log('   ⚠️  IMPORTANT: Make sure this redirect URL is configured in your GitHub App settings!');
-    console.log('   ⚠️  Go to: GitHub → Settings → Developer settings → GitHub Apps → Your App → General');
-    console.log('   ⚠️  Set "Setup URL" or "Callback URL" to:', redirectUrl);
-    
-    // WARNING: If using localhost, GitHub cannot redirect to it!
-    if (APP_BASE_URL.includes('localhost') || APP_BASE_URL.includes('127.0.0.1')) {
-      console.warn('⚠️⚠️⚠️  WARNING: APP_BASE_URL uses localhost!');
-      console.warn('   GitHub cannot redirect to localhost URLs.');
-      console.warn('   You need to use a publicly accessible URL (e.g., ngrok tunnel).');
-      console.warn('   Set APP_BASE_URL to your ngrok URL: https://xxxx.ngrok-free.dev');
-    }
+    console.log('   Note: Using polling approach - no redirect URL needed');
 
     return res.json({ installUrl });
   } catch (error) {
