@@ -10,6 +10,12 @@ export interface PullRequestSummary {
   createdAt: Date;
 }
 
+export interface DiffStats {
+  totalAdditions: number;
+  totalDeletions: number;
+  changedFilesCount: number;
+}
+
 // TypeScript interface
 export interface IPullRequest extends Document {
   installationId: number;
@@ -31,10 +37,24 @@ export interface IPullRequest extends Document {
   summaryStatus: SummaryStatus;
   summaryError: string | null;
   lastSummarizedAt: Date | null;
+  systemLabels?: string[]; // deterministic labels
+  riskFlags?: string[];    // risk flags
+  riskScore?: number;      // 0–100
+  diffStats?: DiffStats;
   slackMessageTs: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+// Embedded schema for diff stats
+const DiffStatsSchema = new Schema<DiffStats>(
+  {
+    totalAdditions: { type: Number, default: 0 },
+    totalDeletions: { type: Number, default: 0 },
+    changedFilesCount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
 
 // Mongoose schema
 const pullRequestSchema = new Schema<IPullRequest>(
@@ -119,6 +139,28 @@ const pullRequestSchema = new Schema<IPullRequest>(
     lastSummarizedAt: {
       type: Date,
       default: null,
+    },
+    systemLabels: {
+      type: [String],
+      default: [],
+    },
+    riskFlags: {
+      type: [String],
+      default: [],
+    },
+    riskScore: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    diffStats: {
+      type: DiffStatsSchema,
+      default: () => ({
+        totalAdditions: 0,
+        totalDeletions: 0,
+        changedFilesCount: 0,
+      }),
     },
     slackMessageTs: {
       type: String,

@@ -321,20 +321,41 @@ export async function getUserRepositories(req: Request, res: Response) {
  * Regenerate summary for a PR (placeholder for future AI integration)
  */
 export async function regeneratePRSummary(req: Request, res: Response) {
+  console.log(`🔄 [regeneratePRSummary] Handler called`);
+  console.log(`   Method: ${req.method}`);
+  console.log(`   Path: ${req.path}`);
+  console.log(`   Params:`, req.params);
+  console.log(`   User:`, req.user ? 'authenticated' : 'NOT AUTHENTICATED');
+  
   try {
     const { id } = req.params;
-    const { installationId, userId } = (req as any).user;
+    
+    if (!req.user) {
+      console.error(`   ❌ No user in request - auth middleware issue?`);
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const user = req.user as any;
+    const userId = user._id;
+    console.log(`   User ID: ${userId}, User: ${user.username}`);
     
     const PullRequest = getPullRequestModel();
     
-    const pr = await PullRequest.findOne({
-      _id: id,
-      installationId,
-    });
+    // Find PR by ID first (we'll verify installation access after)
+    const pr = await PullRequest.findById(id);
     
     if (!pr) {
+      console.error(`   ❌ PR not found with ID: ${id}`);
       return res.status(404).json({ error: 'PR not found' });
     }
+    
+    // Verify user has access to this PR's installation
+    if (!user.installationIds || !user.installationIds.includes(pr.installationId)) {
+      console.error(`   ❌ User ${user.username} does not have access to installation ${pr.installationId}`);
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    console.log(`   ✅ PR found: ${pr.repoFullName}#${pr.number}, Installation: ${pr.installationId}`);
     
     // Update userId to track who triggered regeneration
     pr.userId = userId;
@@ -347,18 +368,25 @@ export async function regeneratePRSummary(req: Request, res: Response) {
     await pr.save();
     
     console.log(`🔄 PR ${pr.repoFullName}#${pr.number} queued for regeneration by user ${userId}`);
+    console.log(`   PR ID: ${pr._id.toString()}`);
+    console.log(`   Installation ID: ${pr.installationId}`);
+    console.log(`   Summary status reset to: ${pr.summaryStatus}`);
     
-    // Enqueue PR summary job
+    // Enqueue PR summary job with 'regenerate' name to force processing
     try {
-      await prSummaryQueue.add('generate', {
+      const job = await prSummaryQueue.add('regenerate', {
         pullRequestId: pr._id.toString(),
         installationId: pr.installationId,
         repoFullName: pr.repoFullName,
         number: pr.number,
       });
-      console.log(`   📋 PR summary regeneration job enqueued`);
+      console.log(`   📋 PR summary regeneration job enqueued:`);
+      console.log(`      Job ID: ${job.id}`);
+      console.log(`      Job name: regenerate`);
+      console.log(`      Queue: pr-summary`);
     } catch (queueError: any) {
       console.error(`   ⚠️  Failed to enqueue PR summary job:`, queueError.message);
+      console.error(`   Stack:`, queueError.stack);
       // Return error to user
       return res.status(500).json({ error: 'Failed to queue summary regeneration' });
     }

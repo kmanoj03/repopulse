@@ -6,6 +6,7 @@ import { getPullRequestModel } from "../models/pullRequest.model";
 import { PrSummaryJobData } from "../queues/prSummaryQueue";
 import { getInstallationOctokit } from "../github/appClient";
 import { PullRequestSummary } from "../models/pullRequest.model";
+import { analyzePullRequestDeterministic, FileChange } from "../analysis/prDeterministic";
 
 /**
  * Initialize MongoDB connection
@@ -22,17 +23,18 @@ async function initMongo() {
 }
 
 /**
- * Generate summary for a PR
- * 
- * This is a stub function - Phase 2 & 3 will plug in LLM/deterministic logic here
+ * Fetch PR data and files from GitHub
  * 
  * @param jobData - Job data containing PR information
- * @returns Generated summary
+ * @returns Object containing filesChanged array and PR data
  */
-async function generateSummaryForPR(jobData: PrSummaryJobData): Promise<PullRequestSummary> {
+async function fetchPRData(jobData: PrSummaryJobData): Promise<{
+  filesChanged: FileChange[];
+  prData: any;
+}> {
   const { installationId, repoFullName, number } = jobData;
 
-  console.log(`[pr-summary-worker] Generating summary for ${repoFullName}#${number}`);
+  console.log(`[pr-summary-worker] Fetching PR data for ${repoFullName}#${number}`);
 
   // 1) GitHub client for that installation
   const octokit = await getInstallationOctokit(installationId);
@@ -68,17 +70,20 @@ async function generateSummaryForPR(jobData: PrSummaryJobData): Promise<PullRequ
   console.log(`   State: ${prData.state}`);
   console.log(`   Additions: ${prData.additions}, Deletions: ${prData.deletions}`);
 
-  // For now, create a stub summary to prove the flow works
-  // Phase 2 & 3 will replace this with actual LLM/deterministic logic
-  const stubSummary: PullRequestSummary = {
-    tldr: `Stub summary for PR #${number}: "${prData.title}". This PR has ${files.length} file(s) changed with ${prData.additions} additions and ${prData.deletions} deletions.`,
-    risks: ["Risk analysis not implemented yet."],
-    labels: ["stub-summary"],
-    createdAt: new Date(),
-  };
+  // Map GitHub files to FileChange type for deterministic analysis
+  const filesChanged: FileChange[] = files.map((f) => ({
+    filename: f.filename,
+    additions: f.additions ?? 0,
+    deletions: f.deletions ?? 0,
+    status: f.status,
+    patch: f.patch ?? null,
+  }));
 
-  console.log(`[pr-summary-worker] Generated stub summary`);
-  return stubSummary;
+  // Return both the filesChanged array and the PR data for use in the worker
+  return {
+    filesChanged,
+    prData,
+  };
 }
 
 /**
@@ -95,7 +100,7 @@ async function main() {
     const worker = new Worker<PrSummaryJobData>(
       "pr-summary",
       async (job: Job<PrSummaryJobData>) => {
-        console.log(`[pr-summary-worker] Received job ${job.id}:`, {
+        console.log(`[pr-summary-worker] Received job ${job.id} (name: ${job.name}):`, {
           pullRequestId: job.data.pullRequestId,
           repoFullName: job.data.repoFullName,
           number: job.data.number,
@@ -113,7 +118,8 @@ async function main() {
         }
 
         // Check if PR is already processed (avoid duplicate work)
-        if (pr.summaryStatus === 'ready' && pr.summary) {
+        // BUT: if job name is 'regenerate', always process it
+        if (job.name !== 'regenerate' && pr.summaryStatus === 'ready' && pr.summary) {
           console.log(`[pr-summary-worker] PR ${pr.repoFullName}#${pr.number} already has a summary, skipping`);
           return;
         }
@@ -122,14 +128,50 @@ async function main() {
           // Update status to processing (optional - you could add a 'processing' status)
           // For now, we'll keep it as 'pending' until it's done
 
-          // Generate summary
-          const summary = await generateSummaryForPR(job.data);
+          // Fetch PR data and files from GitHub
+          const { filesChanged, prData } = await fetchPRData(job.data);
 
-          // Update PR with summary
-          pr.summary = summary;
+          // Run deterministic analysis and persist results
+          // This happens before LLM so we have labels/risk even if LLM fails
+          try {
+            console.log(`[pr-summary-worker] Running deterministic analysis...`);
+            const deterministic = analyzePullRequestDeterministic({
+              filesChanged,
+            });
+
+            // Update PR object with deterministic analysis results
+            pr.systemLabels = deterministic.systemLabels;
+            pr.riskFlags = deterministic.riskFlags;
+            pr.riskScore = deterministic.riskScore;
+            pr.diffStats = deterministic.diffStats;
+
+            console.log(`[pr-summary-worker] ✅ Deterministic analysis completed:`);
+            console.log(`   Labels: ${deterministic.systemLabels.join(", ") || "none"}`);
+            console.log(`   Risk flags: ${deterministic.riskFlags.join(", ") || "none"}`);
+            console.log(`   Risk score: ${deterministic.riskScore}`);
+            console.log(`   Diff stats: +${deterministic.diffStats.totalAdditions} / -${deterministic.diffStats.totalDeletions} (${deterministic.diffStats.changedFilesCount} files)`);
+          } catch (deterministicError: any) {
+            // Log but don't fail the job if deterministic analysis fails
+            console.error(`[pr-summary-worker] ⚠️ Deterministic analysis failed:`, deterministicError.message);
+            console.error(`   Stack:`, deterministicError.stack);
+            // Continue with summary generation even if deterministic analysis fails
+          }
+
+          // Generate summary (stub for now, will be replaced with LLM in Phase 2 & 3)
+          const stubSummary: PullRequestSummary = {
+            tldr: `Stub summary for PR #${job.data.number}: "${prData.title}". This PR has ${filesChanged.length} file(s) changed with ${prData.additions} additions and ${prData.deletions} deletions.`,
+            risks: ["Risk analysis not implemented yet."],
+            labels: ["stub-summary"],
+            createdAt: new Date(),
+          };
+
+          // Update PR with summary and save everything at once
+          pr.summary = stubSummary;
           pr.summaryStatus = "ready";
           pr.summaryError = null;
           pr.lastSummarizedAt = new Date();
+          
+          // Save all updates (deterministic analysis + summary) in one operation
           await pr.save();
 
           console.log(`[pr-summary-worker] ✅ Summary updated for PR ${pr.repoFullName}#${pr.number} (ID: ${pullRequestId})`);
@@ -154,20 +196,30 @@ async function main() {
     );
 
     // Worker event handlers
+    worker.on("active", (job) => {
+      console.log(`[pr-summary-worker] 🔵 Job ${job.id} (${job.name}) is now active`);
+    });
+
     worker.on("completed", (job) => {
-      console.log(`[pr-summary-worker] ✅ Job ${job.id} completed successfully`);
+      console.log(`[pr-summary-worker] ✅ Job ${job.id} (${job.name}) completed successfully`);
     });
 
     worker.on("failed", (job, err) => {
-      console.error(`[pr-summary-worker] ❌ Job ${job?.id} failed:`, err.message);
+      console.error(`[pr-summary-worker] ❌ Job ${job?.id} (${job?.name}) failed:`, err.message);
       if (job?.data) {
         console.error(`   PR ID: ${job.data.pullRequestId}`);
         console.error(`   Repo: ${job.data.repoFullName}#${job.data.number}`);
       }
+      console.error(`   Error stack:`, err.stack);
     });
 
     worker.on("error", (err) => {
       console.error(`[pr-summary-worker] ❌ Worker error:`, err);
+      console.error(`   Error stack:`, err.stack);
+    });
+
+    worker.on("stalled", (jobId) => {
+      console.warn(`[pr-summary-worker] ⚠️  Job ${jobId} stalled`);
     });
 
     console.log("[pr-summary-worker] ✅ Listening on pr-summary queue");
