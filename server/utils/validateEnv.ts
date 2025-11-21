@@ -35,6 +35,8 @@ export function validateEnvironment(): EnvValidationResult {
     'REDIS_HOST',
     'REDIS_PORT',
     'REDIS_PASSWORD',
+    'GEMINI_API_KEY',
+    'GEMINI_MODEL',
   ];
 
   const missing: string[] = [];
@@ -98,6 +100,10 @@ export function printEnvValidation(): boolean {
     }
     console.log(`   Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
     console.log(`   Backend URL: ${process.env.BACKEND_URL || 'http://localhost:3000'}`);
+    console.log(`   Gemini API: ${process.env.GEMINI_API_KEY ? '✅ Enabled' : '⚠️  Disabled (no API key)'}`);
+    if (process.env.GEMINI_API_KEY) {
+      console.log(`   Gemini Model: ${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}`);
+    }
     console.log('');
 
     return true;
