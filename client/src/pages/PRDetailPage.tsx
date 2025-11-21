@@ -52,9 +52,35 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
         type: "success",
       });
 
-      // Re-fetch PR to show updated summary
-      const updatedPR = await getPR(id);
-      setPR(updatedPR);
+      // Poll for updates (check every 2 seconds, max 30 seconds)
+      let attempts = 0;
+      const maxAttempts = 15;
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+          const updatedPR = await getPR(id);
+          setPR(updatedPR);
+          
+          // Stop polling if summary is ready or error, or max attempts reached
+          if (updatedPR.summaryStatus === "ready" || updatedPR.summaryStatus === "error" || attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            setRegenerating(false);
+            if (updatedPR.summaryStatus === "ready") {
+              onToast({
+                id: Date.now().toString(),
+                message: "Summary regenerated successfully",
+                type: "success",
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Failed to poll for PR updates:", error);
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            setRegenerating(false);
+          }
+        }
+      }, 2000);
     } catch (error) {
       console.error("Failed to regenerate summary:", error);
       onToast({
@@ -62,7 +88,6 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
         message: "Failed to regenerate summary",
         type: "error",
       });
-    } finally {
       setRegenerating(false);
     }
   };
@@ -213,6 +238,86 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
             </>
           )}
         </div>
+
+        {/* Deterministic Analysis Section */}
+        {(pr.systemLabels?.length || pr.riskFlags?.length || pr.riskScore !== undefined || pr.diffStats) && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Analysis</h2>
+            
+            {pr.systemLabels && pr.systemLabels.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">System Labels</h3>
+                <div className="flex flex-wrap gap-2">
+                  {pr.systemLabels.map((label) => (
+                    <span
+                      key={label}
+                      className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full font-medium"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {pr.riskFlags && pr.riskFlags.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Risk Flags</h3>
+                <div className="flex flex-wrap gap-2">
+                  {pr.riskFlags.map((flag) => (
+                    <span
+                      key={flag}
+                      className="px-3 py-1 bg-red-100 text-red-800 text-xs rounded-full font-medium"
+                    >
+                      ⚠️ {flag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {pr.riskScore !== undefined && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Risk Score</h3>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-gray-200 rounded-full h-4">
+                    <div
+                      className={`h-4 rounded-full ${
+                        pr.riskScore >= 70
+                          ? "bg-red-500"
+                          : pr.riskScore >= 40
+                          ? "bg-yellow-500"
+                          : "bg-green-500"
+                      }`}
+                      style={{ width: `${pr.riskScore}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700">{pr.riskScore}/100</span>
+                </div>
+              </div>
+            )}
+
+            {pr.diffStats && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Diff Statistics</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <div className="text-xs text-gray-500">Additions</div>
+                    <div className="text-lg font-semibold text-green-600">+{pr.diffStats.totalAdditions}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Deletions</div>
+                    <div className="text-lg font-semibold text-red-600">-{pr.diffStats.totalDeletions}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Files Changed</div>
+                    <div className="text-lg font-semibold text-gray-700">{pr.diffStats.changedFilesCount}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Files Table */}
         <div className="bg-white rounded-lg shadow-md p-6">

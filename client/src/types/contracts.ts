@@ -17,6 +17,12 @@ export interface PRFileChange {
 
 export type SummaryStatus = "pending" | "ready" | "error";
 
+export interface DiffStats {
+  totalAdditions: number;
+  totalDeletions: number;
+  changedFilesCount: number;
+}
+
 export interface PRDoc {
   _id: string;              // MongoDB _id as string
   repoId: string;           // Changed from number to string to match Mongoose model
@@ -32,6 +38,10 @@ export interface PRDoc {
   summaryStatus: SummaryStatus; // "pending" | "ready" | "error"
   summaryError: string | null;  // Error message if summary generation failed
   lastSummarizedAt: string | null; // ISO string (Date in backend, string in frontend)
+  systemLabels?: string[];  // Deterministic labels from analysis
+  riskFlags?: string[];     // Risk flags from analysis
+  riskScore?: number;       // Risk score (0-100)
+  diffStats?: DiffStats;    // Diff statistics
   slackMessageTs: string | null;  // Changed from optional to string | null
   createdAt: string;        // ISO string (Date in backend, string in frontend)
   updatedAt: string;        // ISO string (Date in backend, string in frontend)
