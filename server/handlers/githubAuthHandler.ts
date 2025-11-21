@@ -15,12 +15,19 @@ export async function handleGitHubLogin(req: Request, res: Response) {
     return res.status(500).send('Server configuration error: GitHub OAuth not configured');
   }
 
-  const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3000'}/auth/github/callback`;
+  // Build redirect URI for OAuth callback
+  // This must match the "Authorization callback URL" in your GitHub OAuth App settings
+  // NOTE: This is different from GitHub App installation - OAuth login still needs redirect_uri
+  const BACKEND_URL = process.env.BACKEND_URL || process.env.APP_BASE_URL || 'http://localhost:3000';
+  const redirectUri = `${BACKEND_URL.replace(/\/+$/, '')}/auth/github/callback`;
   
   // Request scope to read user installations
   // read:user, user:email - basic user info
   // read:org - to see org installations (if user is member)
-  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&scope=read:user,user:email,read:org`;
+  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user,user:email,read:org`;
+  
+  console.log('🔵 OAuth login - redirect URI:', redirectUri);
+  console.log('   ⚠️  Make sure this matches your GitHub OAuth App "Authorization callback URL"');
   
   res.redirect(githubAuthUrl);
 }
