@@ -2,11 +2,26 @@ import { Queue } from "bullmq";
 import { redisConnection } from "./redisConnection";
 
 /**
- * Job data structure for Slack notifications
+ * Job data structure for Slack PR notifications
  */
-export type SlackNotifyJobData = {
-  payload: any; // Slack webhook payload (blocks, text, etc.)
+export type SlackPrNotificationJobData = {
+  pullRequestId: string;
+  repoFullName: string;
+  number: number;
+  title: string;
+  author: string;
+  tldr: string;
+  riskScore: number;
+  mainRiskFlags: string[];
+  systemLabels: string[];
+  htmlUrl: string;
+  dashboardUrl?: string;
 };
+
+/**
+ * Alias for backward compatibility
+ */
+export type SlackNotifyJobData = SlackPrNotificationJobData;
 
 /**
  * Slack Notification Queue

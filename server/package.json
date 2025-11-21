@@ -8,7 +8,8 @@
     "start": "node dist/server/server.js",
     "check-setup": "tsx scripts/checkSetup.ts",
     "migrate": "tsx scripts/migratePullRequestSchema.ts",
-    "worker:pr-summary": "tsx workers/prSummaryWorker.ts"
+    "worker:pr-summary": "tsx workers/prSummaryWorker.ts",
+    "worker:slack": "tsx workers/slackNotifyWorker.ts"
   },
   "author": "",
   "license": "ISC",
