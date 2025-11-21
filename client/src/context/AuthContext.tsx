@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { getMe, UserInfo } from "../api/me";
 
 interface User {
   userId: string;
@@ -12,11 +13,13 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Decode JWT to get user info (without verification - server already verified it)
+// Used as fallback if /api/me fails
 function decodeJWT(token: string): User | null {
   try {
     const base64Url = token.split('.')[1];
@@ -53,16 +56,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = !!user;
 
-  // Load user from token on mount
-  useEffect(() => {
-    const loadUser = () => {
-      const accessToken = localStorage.getItem("accessToken");
+  const loadUser = async () => {
+    const accessToken = localStorage.getItem("accessToken");
 
-      if (!accessToken) {
-        setIsLoading(false);
-        return;
-      }
+    if (!accessToken) {
+      setIsLoading(false);
+      return;
+    }
 
+    // Try to fetch full user info from /api/me
+    try {
+      const meData = await getMe();
+      // Convert UserInfo to User format for backward compatibility
+      setUser({
+        userId: meData.user.id,
+        githubId: meData.user.githubId,
+        username: meData.user.username,
+        installationId: meData.user.installationIds[0] || 0,
+      });
+    } catch (error) {
+      // Fallback to JWT decoding if API call fails
+      console.warn("Failed to fetch user from API, falling back to JWT decode:", error);
       const userData = decodeJWT(accessToken);
       
       if (!userData) {
@@ -73,9 +87,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(userData);
+    } finally {
       setIsLoading(false);
-    };
+    }
+  };
 
+  const refreshUser = async () => {
+    await loadUser();
+  };
+
+  // Load user from token on mount
+  useEffect(() => {
     loadUser();
   }, []);
 
@@ -85,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, isLoading, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, isLoading, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

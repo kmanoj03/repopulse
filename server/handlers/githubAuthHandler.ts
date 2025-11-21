@@ -17,7 +17,10 @@ export async function handleGitHubLogin(req: Request, res: Response) {
 
   const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3000'}/auth/github/callback`;
   
-  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&scope=read:user,user:email`;
+  // Request scope to read user installations
+  // read:user, user:email - basic user info
+  // read:org - to see org installations (if user is member)
+  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&scope=read:user,user:email,read:org`;
   
   res.redirect(githubAuthUrl);
 }
@@ -68,46 +71,75 @@ export async function handleGitHubCallback(req: Request, res: Response) {
     
     const githubUser = userResponse.data;
     
-    // 3. Get installations from OUR database (not GitHub API)
-    // Installations are stored when webhooks are received
-    const { getInstallationModel } = await import('../models/Installation');
-    const Installation = getInstallationModel();
-    
-    const installations = await Installation.find({}).lean();
-    
-    if (installations.length === 0) {
-      console.warn(`⚠️  No installations found in database. Please install the GitHub App on at least one repository.`);
-      return res.redirect(`${FRONTEND_URL}/login?error=no_installations`);
+    // 3. Fetch installations the user has access to
+    let installationIds: number[] = [];
+    try {
+      console.log(`🔵 Fetching installations for user ${githubUser.login}...`);
+      const installationsResponse = await axios.get('https://api.github.com/user/installations', {
+        headers: { Authorization: `token ${accessToken}` },
+      });
+      
+      if (installationsResponse.data && installationsResponse.data.installations) {
+        installationIds = installationsResponse.data.installations.map((inst: any) => inst.id);
+        console.log(`✅ Found ${installationIds.length} installation(s) for user ${githubUser.login}: [${installationIds.join(', ')}]`);
+      } else {
+        console.log(`ℹ️  No installations found for user ${githubUser.login}`);
+      }
+    } catch (installError: any) {
+      console.warn(`⚠️  Failed to fetch installations for user ${githubUser.login}:`, installError.message);
+      // Continue with empty installationIds - user can install app manually
+      if (installError.response) {
+        console.warn(`   Response status: ${installError.response.status}`);
+        console.warn(`   Response data:`, installError.response.data);
+      }
     }
     
-    // For now, give user access to all installations
-    // TODO: Later, implement proper user-installation association
-    const installationIds = installations.map((inst: any) => inst.installationId);
-    
-    // 4. Create/update user
+    // 4. Create/update user with synced installationIds
     const User = getUserModel();
-    const user = await User.findOneAndUpdate(
-      { githubId: githubUser.id },
-      {
+    const existingUser = await User.findOne({ githubId: githubUser.id });
+    
+    let user;
+    if (existingUser) {
+      // Update existing user
+      existingUser.username = githubUser.login;
+      existingUser.email = githubUser.email || `${githubUser.login}@github.local`;
+      existingUser.avatarUrl = githubUser.avatar_url || '';
+      existingUser.lastLoginAt = new Date();
+      
+      // Sync installationIds from GitHub
+      // Merge with existing ones to avoid losing any (in case of edge cases)
+      const existingIds = existingUser.installationIds || [];
+      const mergedIds = [...new Set([...existingIds, ...installationIds])];
+      existingUser.installationIds = mergedIds;
+      
+      await existingUser.save();
+      user = existingUser;
+      
+      if (mergedIds.length > existingIds.length) {
+        console.log(`   ✅ Updated installationIds: [${existingIds.join(', ')}] → [${mergedIds.join(', ')}]`);
+      }
+    } else {
+      // Create new user with synced installationIds
+      user = await User.create({
         githubId: githubUser.id,
         username: githubUser.login,
         email: githubUser.email || `${githubUser.login}@github.local`,
         avatarUrl: githubUser.avatar_url || '',
-        installationIds,
+        installationIds: installationIds,
         lastLoginAt: new Date(),
-      },
-      { upsert: true, new: true }
-    );
+      });
+    }
     
     console.log(`✅ User ${user.username} logged in`);
-    console.log(`   Installations: ${installationIds.join(', ')}`);
+    console.log(`   Installations: ${user.installationIds.length > 0 ? user.installationIds.join(', ') : 'none (onboarding required)'}`);
     
-    // 5. Generate JWT with first installation as default
+    // 4. Generate JWT
+    // Use first installation if available, otherwise 0 (dashboard will handle onboarding)
     const token = generateUserJWT({
       userId: user._id.toString(),
       githubId: user.githubId,
       username: user.username,
-      installationId: installationIds[0],
+      installationId: user.installationIds.length > 0 ? user.installationIds[0] : 0,
     });
     
     // 6. Redirect to frontend with token

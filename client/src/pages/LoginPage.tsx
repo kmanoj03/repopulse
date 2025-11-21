@@ -30,7 +30,9 @@ export function LoginPage() {
     }
   }, [searchParams]);
 
-  const handleGitHubLogin = () => {
+  const handleGitHubLogin = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     // Redirect to backend GitHub OAuth endpoint
     window.location.href = `${API_BASE_URL}/auth/github`;
   };

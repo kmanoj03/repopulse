@@ -23,8 +23,8 @@ export function OAuthCallbackPage() {
       
       setStatus("success");
       
-      // Redirect to dashboard
-      setTimeout(() => navigate("/prs"), 1000);
+      // Redirect to dashboard (not /prs)
+      setTimeout(() => navigate("/dashboard"), 1000);
     } catch (error) {
       setStatus("error");
       setErrorMessage("Failed to save authentication token");

@@ -18,6 +18,12 @@ export function Header() {
             <h1 className="text-xl font-bold text-gray-900">RepoPulse</h1>
             <nav className="ml-8 flex space-x-4">
               <button
+                onClick={() => navigate("/dashboard")}
+                className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+              >
+                Dashboard
+              </button>
+              <button
                 onClick={() => navigate("/prs")}
                 className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
               >
@@ -29,8 +35,8 @@ export function Header() {
           {user && (
             <div className="flex items-center space-x-4">
               <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.email}</p>
+                <p className="text-sm font-medium text-gray-900">{user.username}</p>
+                <p className="text-xs text-gray-500">@{user.username}</p>
               </div>
               <button
                 onClick={handleLogout}

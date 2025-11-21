@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyUserJWT } from '../utils/userAuth';
+import { getUserModel, IUser } from '../models/User';
 
 /**
  * Middleware to authenticate requests using JWT
  * Extracts and verifies the JWT token from Authorization header
+ * Loads full user document from database and attaches to req.user
  */
 export async function jwtAuthMiddleware(
   req: Request,
@@ -23,13 +25,16 @@ export async function jwtAuthMiddleware(
     // Verify token
     const decoded = verifyUserJWT(token);
     
-    // Attach user info to request
-    (req as any).user = {
-      userId: decoded.userId,
-      githubId: decoded.githubId,
-      username: decoded.username,
-      installationId: decoded.installationId,
-    };
+    // Load full user from database
+    const User = getUserModel();
+    const user = await User.findById(decoded.userId);
+    
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    
+    // Attach full user document to request
+    (req as any).user = user;
     
     next();
   } catch (error) {
