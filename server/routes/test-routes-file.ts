@@ -10,5 +10,10 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Test route' });
 });
 
+const router2 = express.Router();
+
+const router2 = express.Router();
+
+
 export default router;
 
