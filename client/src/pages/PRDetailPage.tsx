@@ -4,6 +4,8 @@ import { getPR, regenerateSummary } from "../api/client";
 import { PRDoc } from "../types/contracts";
 import { ToastMessage } from "../components/ToastContainer";
 import { Header } from "../components/Header";
+import { RiskModal } from "../components/RiskModal";
+import { getDetailsForRisk } from "../utils/riskDetails";
 
 interface PRDetailPageProps {
   onToast: (toast: ToastMessage) => void;
@@ -15,6 +17,7 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
   const [pr, setPR] = useState<PRDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
+  const [openFlag, setOpenFlag] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -268,12 +271,13 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
                 <h3 className="text-sm font-medium text-gray-700 mb-2">Risk Flags</h3>
                 <div className="flex flex-wrap gap-2">
                   {pr.riskFlags.map((flag) => (
-                    <span
+                    <button
                       key={flag}
-                      className="px-3 py-1 bg-red-100 text-red-800 text-xs rounded-full font-medium"
+                      onClick={() => setOpenFlag(flag)}
+                      className="px-3 py-1 bg-red-100 text-red-800 text-xs rounded-full font-medium cursor-pointer hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
                     >
                       ⚠️ {flag}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -382,6 +386,16 @@ export function PRDetailPage({ onToast }: PRDetailPageProps) {
           </button>
         </div>
       </div>
+
+      {/* Risk Modal */}
+      {openFlag && (
+        <RiskModal
+          isOpen={true}
+          onClose={() => setOpenFlag(null)}
+          flag={openFlag}
+          {...getDetailsForRisk(openFlag, pr)}
+        />
+      )}
     </div>
   );
 }
