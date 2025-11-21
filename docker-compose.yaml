@@ -1,0 +1,205 @@
+services:
+  # MongoDB Database (Optional - only needed if not using MongoDB Atlas)
+  # Uncomment if you want to use local MongoDB instead of Atlas
+  # mongo:
+  #   image: mongo:7.0
+  #   container_name: repopulse-mongo
+  #   restart: unless-stopped
+  #   ports:
+  #     - "27017:27017"
+  #   environment:
+  #     MONGO_INITDB_DATABASE: repopulse
+  #   volumes:
+  #     - mongo_data:/data/db
+  #   networks:
+  #     - repopulse-network
+  #   healthcheck:
+  #     test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Redis Cache/Queue
+  redis:
+    image: redis:7-alpine
+    container_name: repopulse-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - repopulse-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # Backend API Server
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: repopulse-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Database
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/repopulse}
+      
+      # Server
+      PORT: ${PORT:-3000}
+      NODE_ENV: production
+      
+      # Frontend/Backend URLs
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:3000}
+      APP_BASE_URL: ${APP_BASE_URL:-${BACKEND_URL:-http://localhost:3000}}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-${FRONTEND_URL:-http://localhost:5173}}
+      
+      # GitHub App Configuration
+      GITHUB_APP_ID: ${GITHUB_APP_ID}
+      GITHUB_PRIVATE_KEY_PATH: ${GITHUB_PRIVATE_KEY_PATH:-/app/private-key.pem}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-${GITHUB_APP_SECRET_KEY}}
+      GITHUB_APP_SECRET_KEY: ${GITHUB_APP_SECRET_KEY:-${GITHUB_WEBHOOK_SECRET}}
+      
+      # GitHub OAuth
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      
+      # Bcrypt
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-10}
+      
+      # Ngrok
+      NGROK_AUTH_TOKEN: ${NGROK_AUTH_TOKEN:-}
+      NGROK_URL: ${NGROK_URL:-}
+      
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      
+      # Gemini AI (optional)
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      
+      # Slack (optional)
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID:-}
+    volumes:
+      # Mount private key - adjust path as needed
+      - ${GITHUB_PRIVATE_KEY_PATH:-./server/repopulse272.2025-11-19.private-key.pem}:/app/private-key.pem:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - repopulse-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # BullMQ Worker
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: repopulse-worker
+    restart: unless-stopped
+    command: node dist/workers/prSummaryWorker.js
+    environment:
+      # Database
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/repopulse}
+      
+      # Server
+      NODE_ENV: production
+      
+      # GitHub App Configuration
+      GITHUB_APP_ID: ${GITHUB_APP_ID}
+      GITHUB_PRIVATE_KEY_PATH: ${GITHUB_PRIVATE_KEY_PATH:-/app/private-key.pem}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-${GITHUB_APP_SECRET_KEY}}
+      GITHUB_APP_SECRET_KEY: ${GITHUB_APP_SECRET_KEY:-${GITHUB_WEBHOOK_SECRET}}
+      
+      # GitHub OAuth
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      
+      # Bcrypt
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-10}
+      
+      # Ngrok
+      NGROK_AUTH_TOKEN: ${NGROK_AUTH_TOKEN:-}
+      NGROK_URL: ${NGROK_URL:-}
+      
+      # Redis
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      
+      # Gemini AI (optional)
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      
+      # Slack (optional)
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID:-}
+    volumes:
+      # Mount private key - adjust path as needed
+      - ${GITHUB_PRIVATE_KEY_PATH:-./server/repopulse272.2025-11-19.private-key.pem}:/app/private-key.pem:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - repopulse-network
+
+  # Frontend Client
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000}
+    container_name: repopulse-client
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    networks:
+      - repopulse-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  # mongo_data:  # Uncomment if using local MongoDB
+  #   driver: local
+  redis_data:
+    driver: local
+
+networks:
+  repopulse-network:
+    driver: bridge
+
