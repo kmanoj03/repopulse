@@ -39,7 +39,8 @@ function verifySignature(payload: string, signature: string): boolean {
 // MAIN WEBHOOK HANDLER
 // ============================================
 
-router.post('/github', async (req, res) => {
+// Export the webhook handler function so it can be used at root path too
+export async function handleWebhook(req: express.Request, res: express.Response) {
   try {
     // Verify signature
     const signature = req.headers['x-hub-signature-256'] as string;
@@ -98,7 +99,10 @@ router.post('/github', async (req, res) => {
     console.error('Webhook error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+// Route handler for /webhooks/github
+router.post('/github', handleWebhook);
 
 // Optional: GET endpoint to test if webhook route is working
 router.get('/github', (req, res) => {

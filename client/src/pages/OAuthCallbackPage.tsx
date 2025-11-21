@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 export function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { refreshUser, isAuthenticated, isLoading } = useAuth();
   const [status, setStatus] = useState<"processing" | "success" | "error">("processing");
   const [errorMessage, setErrorMessage] = useState("");
+  const [tokenStored, setTokenStored] = useState(false);
 
   useEffect(() => {
     const token = searchParams.get("token");
@@ -20,17 +23,36 @@ export function OAuthCallbackPage() {
     try {
       // Store the JWT token
       localStorage.setItem("accessToken", token);
+      setTokenStored(true);
       
-      setStatus("success");
-      
-      // Redirect to dashboard
-      setTimeout(() => navigate("/prs"), 1000);
+      // Refresh user data from AuthContext (this will call /api/me)
+      refreshUser().then(() => {
+        setStatus("success");
+      }).catch((error) => {
+        console.error("Failed to refresh user:", error);
+        setStatus("error");
+        setErrorMessage("Failed to authenticate. Please try again.");
+        setTimeout(() => navigate("/login?error=auth_failed"), 2000);
+      });
     } catch (error) {
       setStatus("error");
       setErrorMessage("Failed to save authentication token");
       setTimeout(() => navigate("/login?error=token_save_failed"), 2000);
     }
-  }, [searchParams, navigate]);
+  }, [searchParams, navigate, refreshUser]);
+
+  // Wait for AuthContext to finish loading user before redirecting
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && status === "success" && tokenStored) {
+      // User is now authenticated, redirect to dashboard
+      navigate("/dashboard", { replace: true });
+    } else if (!isLoading && !isAuthenticated && status === "success" && tokenStored) {
+      // Token was saved but user didn't load - might be invalid token
+      setStatus("error");
+      setErrorMessage("Failed to authenticate. Please try again.");
+      setTimeout(() => navigate("/login?error=auth_failed"), 2000);
+    }
+  }, [isLoading, isAuthenticated, status, navigate, tokenStored]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center px-4">

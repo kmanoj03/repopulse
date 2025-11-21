@@ -3,6 +3,8 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { LoginPage } from "./pages/LoginPage";
 import { OAuthCallbackPage } from "./pages/OAuthCallbackPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { ErrorPage } from "./pages/ErrorPage";
 import { PRListPage } from "./pages/PRListPage";
 import { RepoPRsPage } from "./pages/RepoPRsPage";
 import { PRDetailPage } from "./pages/PRDetailPage";
@@ -35,11 +37,20 @@ function AppRoutes() {
         <Route
           path="/"
           element={
-            isAuthenticated ? <Navigate to="/prs" replace /> : <Navigate to="/login" replace />
+            isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />
           }
         />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+        <Route path="/error" element={<ErrorPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/prs"
           element={

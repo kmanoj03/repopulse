@@ -14,10 +14,18 @@ export function validateEnvironment(): EnvValidationResult {
     'MONGODB_URI',
     'GITHUB_APP_ID',
     'GITHUB_PRIVATE_KEY_PATH',
-    'GITHUB_CLIENT_ID',
-    'GITHUB_CLIENT_SECRET',
     'JWT_SECRET',
   ];
+  
+  // OAuth credentials: Either GitHub App OAuth (preferred) or OAuth App (fallback)
+  const hasGitHubAppOAuth = process.env.GITHUB_APP_CLIENT_ID && process.env.GITHUB_APP_CLIENT_SECRET;
+  const hasOAuthApp = process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET;
+  
+  if (!hasGitHubAppOAuth && !hasOAuthApp) {
+    // Add to required if neither is set
+    required.push('GITHUB_APP_CLIENT_ID (or GITHUB_CLIENT_ID)');
+    required.push('GITHUB_APP_CLIENT_SECRET (or GITHUB_CLIENT_SECRET)');
+  }
 
   const optional = [
     'PORT',
@@ -34,6 +42,11 @@ export function validateEnvironment(): EnvValidationResult {
     if (!process.env[envVar]) {
       missing.push(envVar);
     }
+  }
+  
+  // Check OAuth credentials and add warning if using OAuth App instead of GitHub App OAuth
+  if (hasOAuthApp && !hasGitHubAppOAuth) {
+    warnings.push('Using OAuth App credentials - consider switching to GitHub App OAuth (GITHUB_APP_CLIENT_ID) to enable /user/installations check');
   }
 
   // Check optional but recommended variables
@@ -74,7 +87,12 @@ export function printEnvValidation(): boolean {
     console.log(`   Port: ${process.env.PORT || 3000}`);
     console.log(`   GitHub App ID: ${process.env.GITHUB_APP_ID}`);
     console.log(`   Private Key: ${process.env.GITHUB_PRIVATE_KEY_PATH}`);
-    console.log(`   OAuth Client ID: ${process.env.GITHUB_CLIENT_ID}`);
+    console.log(`   GitHub App OAuth Client ID: ${process.env.GITHUB_APP_CLIENT_ID || process.env.GITHUB_CLIENT_ID || 'NOT SET'}`);
+    if (process.env.GITHUB_APP_CLIENT_ID) {
+      console.log(`   ✅ Using GitHub App OAuth (can check /user/installations)`);
+    } else if (process.env.GITHUB_CLIENT_ID) {
+      console.log(`   ⚠️  Using OAuth App (cannot check /user/installations - will fallback to manual install)`);
+    }
     console.log(`   Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
     console.log(`   Backend URL: ${process.env.BACKEND_URL || 'http://localhost:3000'}`);
     console.log('');

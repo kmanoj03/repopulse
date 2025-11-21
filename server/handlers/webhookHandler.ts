@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import { getInstallationModel } from '../models/Installation';
+import { getUserModel } from '../models/User';
 import { getPullRequestModel } from '../models/pullRequest.model';
 import { getPRFiles } from '../utils/githubAppAuth';
+import { syncOrgMembersToInstallation } from '../utils/orgMembers';
 
 // ============================================
 // INSTALLATION WEBHOOKS
@@ -10,6 +12,8 @@ import { getPRFiles } from '../utils/githubAppAuth';
 /**
  * Handle installation.created event
  * Triggered when someone installs the GitHub App
+ * NOTE: This webhook doesn't know which user installed it, so we can't link it to a user here.
+ * The callback handler (/api/github/app/setup) should handle user linking via state token.
  */
 export async function handleInstallationCreated(req: Request, res: Response) {
   const { installation, repositories } = req.body;
@@ -17,13 +21,21 @@ export async function handleInstallationCreated(req: Request, res: Response) {
   try {
     const Installation = getInstallationModel();
     
+    // Check if installation already exists (might have been created by callback handler)
+    const existing = await Installation.findOne({ installationId: installation.id });
+    
+    if (existing) {
+      console.log(`ℹ️  Installation ${installation.id} already exists, skipping webhook creation`);
+      return res.status(200).json({ success: true, message: 'Installation already exists' });
+    }
+    
     // Save installation
     await Installation.create({
       installationId: installation.id,
       accountType: installation.account.type,
       accountLogin: installation.account.login,
       accountAvatarUrl: installation.account.avatar_url || '',
-      repositories: repositories.map((repo: any) => ({
+      repositories: (repositories || []).map((repo: any) => ({
         repoId: repo.id.toString(),
         repoFullName: repo.full_name,
         private: repo.private,
@@ -31,7 +43,45 @@ export async function handleInstallationCreated(req: Request, res: Response) {
       })),
     });
     
-    console.log(`✅ Installation ${installation.id} created for ${installation.account.login}`);
+    console.log(`✅ Installation ${installation.id} created via webhook for ${installation.account.login}`);
+    
+    // Try to link to user by account login (for User accounts)
+    // For Organization accounts, we'll sync all org members
+    const accountType = installation.account.type;
+    
+    if (accountType === 'Organization') {
+      // Organization installation - sync all org members
+      console.log(`   🔵 Organization installation detected. Syncing org members...`);
+      const syncResult = await syncOrgMembersToInstallation(installation.id, installation.account.login);
+      console.log(`   Sync result: ${syncResult.updated} users updated, ${syncResult.errors} errors`);
+    } else {
+      // User account - try to link by username (fallback if callback didn't work)
+      // This is a best-effort attempt - the callback with state token is the proper way
+      try {
+        const User = getUserModel();
+        // Try to find user by GitHub username matching the account login
+        const user = await User.findOne({ username: installation.account.login });
+        if (user) {
+          if (!user.installationIds.includes(installation.id)) {
+            user.installationIds.push(installation.id);
+            await user.save();
+            console.log(`   ✅ Linked installation ${installation.id} to user ${user.username} (matched by username)`);
+            console.log(`   User now has installationIds: [${user.installationIds.join(', ')}]`);
+          } else {
+            console.log(`   ℹ️  Installation ${installation.id} already linked to user ${user.username}`);
+          }
+        } else {
+          console.log(`   ⚠️  Could not find user with username "${installation.account.login}" to link installation`);
+          console.log(`   Available users:`, await User.find({}).select('username installationIds').lean().then(users => 
+            users.map((u: any) => `${u.username} (installs: [${u.installationIds?.join(', ') || 'none'}])`)
+          ));
+          console.log(`   The callback handler (/api/github/app/setup) should link it when the user completes installation.`);
+        }
+      } catch (linkError: any) {
+        console.warn('   ⚠️  Failed to link installation to user:', linkError.message);
+      }
+    }
+    
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Error saving installation:', error);
@@ -48,14 +98,25 @@ export async function handleInstallationDeleted(req: Request, res: Response) {
   
   try {
     const Installation = getInstallationModel();
+    const User = getUserModel();
+    const installationId = installation.id;
     
     // Mark installation as suspended
     await Installation.findOneAndUpdate(
-      { installationId: installation.id },
+      { installationId },
       { suspendedAt: new Date() }
     );
     
-    console.log(`✅ Installation ${installation.id} marked as deleted`);
+    console.log(`✅ Installation ${installationId} marked as deleted`);
+    
+    // Remove this installationId from all users who have it
+    const result = await User.updateMany(
+      { installationIds: installationId },
+      { $pull: { installationIds: installationId } }
+    );
+    
+    console.log(`✅ Removed installation ${installationId} from ${result.modifiedCount} user(s)`);
+    
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Error deleting installation:', error);
@@ -142,21 +203,75 @@ export async function handleInstallationRepositoriesRemoved(req: Request, res: R
 export async function handlePROpened(req: Request, res: Response) {
   const { installation, repository, pull_request } = req.body;
   
+  console.log(`📥 PR opened webhook: ${repository.full_name}#${pull_request.number}`);
+  console.log(`   Installation ID: ${installation.id}`);
+  console.log(`   PR Title: ${pull_request.title}`);
+  
   try {
-    // Get PR files
-    const files = await getPRFiles(
-      installation.id,
-      repository.owner.login,
-      repository.name,
-      pull_request.number
-    );
-    
+    // Check if PR already exists (avoid duplicates)
     const PullRequest = getPullRequestModel();
+    const existing = await PullRequest.findOne({
+      installationId: installation.id,
+      repoId: repository.id.toString(),
+      number: pull_request.number,
+    });
     
-    // Save PR (userId is null - no user triggered this)
+    if (existing) {
+      console.log(`ℹ️  PR ${repository.full_name}#${pull_request.number} already exists, skipping`);
+      return res.status(200).json({ success: true, message: 'PR already exists', prId: existing._id });
+    }
+    
+    // Get PR files
+    let files: any[] = [];
+    try {
+      files = await getPRFiles(
+        installation.id,
+        repository.owner.login,
+        repository.name,
+        pull_request.number
+      );
+      console.log(`   Fetched ${files.length} files`);
+    } catch (fileError: any) {
+      console.warn(`   ⚠️  Failed to fetch PR files: ${fileError.message}`);
+      // Continue without files - PR can still be saved
+    }
+    
+    // Try to link PR to a user by finding users with this installationId
+    let linkedUserId: string | null = null;
+    try {
+      const User = getUserModel();
+      const usersWithInstallation = await User.find({
+        installationIds: installation.id,
+      }).lean();
+      
+      if (usersWithInstallation.length === 1) {
+        // Only one user has this installation - link it
+        linkedUserId = usersWithInstallation[0]._id.toString();
+        console.log(`   ✅ Linked PR to user: ${usersWithInstallation[0].username}`);
+      } else if (usersWithInstallation.length > 1) {
+        // Multiple users have this installation - try to match by PR author's GitHub username
+        const prAuthor = pull_request.user.login;
+        const matchingUser = usersWithInstallation.find(
+          (u: any) => u.username === prAuthor
+        );
+        if (matchingUser) {
+          linkedUserId = matchingUser._id.toString();
+          console.log(`   ✅ Linked PR to user by author match: ${matchingUser.username}`);
+        } else {
+          console.log(`   ℹ️  Multiple users have this installation, but PR author "${prAuthor}" doesn't match any username`);
+        }
+      } else {
+        console.log(`   ℹ️  No users found with installationId ${installation.id} - PR will have userId: null`);
+      }
+    } catch (userLinkError: any) {
+      console.warn(`   ⚠️  Failed to link PR to user: ${userLinkError.message}`);
+      // Continue without userId - PR can still be saved
+    }
+    
+    // Save PR
     const pr = await PullRequest.create({
       installationId: installation.id,
-      userId: null,
+      userId: linkedUserId,
       repoId: repository.id.toString(),
       repoFullName: repository.full_name,
       number: pull_request.number,
@@ -179,15 +294,18 @@ export async function handlePROpened(req: Request, res: Response) {
     });
     
     console.log(`✅ PR ${pr.repoFullName}#${pr.number} saved`);
+    console.log(`   PR ID: ${pr._id}`);
     console.log(`   Installation: ${installation.id}`);
     console.log(`   Author: ${pr.author}`);
+    console.log(`   Files: ${pr.filesChanged.length}`);
     
     // TODO: Enqueue for AI analysis (next phase)
     
     res.status(200).json({ success: true, prId: pr._id });
-  } catch (error) {
-    console.error('Error saving PR:', error);
-    res.status(500).json({ error: 'Failed to save PR' });
+  } catch (error: any) {
+    console.error('❌ Error saving PR:', error);
+    console.error('   Stack:', error.stack);
+    res.status(500).json({ error: 'Failed to save PR', message: error.message });
   }
 }
 
@@ -209,9 +327,47 @@ export async function handlePRSynchronized(req: Request, res: Response) {
     
     const PullRequest = getPullRequestModel();
     
+    // Check if PR exists first
+    const existing = await PullRequest.findOne({
+      installationId: installation.id,
+      repoId: repository.id.toString(),
+      number: pull_request.number,
+    });
+    
+    // Try to link PR to a user if it's a new PR
+    let linkedUserId: string | null = null;
+    if (!existing) {
+      try {
+        const User = getUserModel();
+        const usersWithInstallation = await User.find({
+          installationIds: installation.id,
+        }).lean();
+        
+        if (usersWithInstallation.length === 1) {
+          linkedUserId = usersWithInstallation[0]._id.toString();
+          console.log(`   ✅ Linked PR to user: ${usersWithInstallation[0].username}`);
+        } else if (usersWithInstallation.length > 1) {
+          const prAuthor = pull_request.user.login;
+          const matchingUser = usersWithInstallation.find(
+            (u: any) => u.username === prAuthor
+          );
+          if (matchingUser) {
+            linkedUserId = matchingUser._id.toString();
+            console.log(`   ✅ Linked PR to user by author match: ${matchingUser.username}`);
+          }
+        }
+      } catch (userLinkError: any) {
+        console.warn(`   ⚠️  Failed to link PR to user: ${userLinkError.message}`);
+      }
+    }
+    
     // Update PR (or create if it doesn't exist)
     const pr = await PullRequest.findOneAndUpdate(
-      { repoId: repository.id.toString(), number: pull_request.number },
+      { 
+        installationId: installation.id,
+        repoId: repository.id.toString(), 
+        number: pull_request.number 
+      },
       {
         $set: {
           title: pull_request.title,
@@ -233,7 +389,7 @@ export async function handlePRSynchronized(req: Request, res: Response) {
         },
         $setOnInsert: {
           installationId: installation.id,
-          userId: null,
+          userId: linkedUserId,
           repoId: repository.id.toString(),
           repoFullName: repository.full_name,
           number: pull_request.number,
@@ -242,9 +398,9 @@ export async function handlePRSynchronized(req: Request, res: Response) {
       { upsert: true, new: true }
     );
     
-    console.log(`✅ PR ${pr.repoFullName}#${pr.number} ${pr.wasNew ? 'created' : 'updated'} (synchronized/edited)`);
-    
-    console.log(`✅ PR ${pr.repoFullName}#${pr.number} updated (synchronized)`);
+    // Check if this was a new PR or update
+    const wasNew = !existing;
+    console.log(`✅ PR ${pr.repoFullName}#${pr.number} ${wasNew ? 'created' : 'updated'} (synchronized/edited)`);
     
     // TODO: Enqueue for AI analysis (next phase)
     
