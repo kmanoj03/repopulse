@@ -7,6 +7,7 @@ import { PrSummaryJobData } from "../queues/prSummaryQueue";
 import { getInstallationOctokit } from "../github/appClient";
 import { PullRequestSummary } from "../models/pullRequest.model";
 import { analyzePullRequestDeterministic, FileChange } from "../analysis/prDeterministic";
+import { generatePrSummaryWithGemini } from "../llm/geminiClient";
 
 /**
  * Initialize MongoDB connection
@@ -157,24 +158,83 @@ async function main() {
             // Continue with summary generation even if deterministic analysis fails
           }
 
-          // Generate summary (stub for now, will be replaced with LLM in Phase 2 & 3)
-          const stubSummary: PullRequestSummary = {
-            tldr: `Stub summary for PR #${job.data.number}: "${prData.title}". This PR has ${filesChanged.length} file(s) changed with ${prData.additions} additions and ${prData.deletions} deletions.`,
-            risks: ["Risk analysis not implemented yet."],
-            labels: ["stub-summary"],
-            createdAt: new Date(),
-          };
+          // Generate summary with Gemini
+          try {
+            console.log("[pr-summary-worker] Building LLM input...");
 
-          // Update PR with summary and save everything at once
-          pr.summary = stubSummary;
-          pr.summaryStatus = "ready";
-          pr.summaryError = null;
-          pr.lastSummarizedAt = new Date();
-          
-          // Save all updates (deterministic analysis + summary) in one operation
-          await pr.save();
+            const filesSummary = filesChanged.slice(0, 20).map((f) => ({
+              filename: f.filename,
+              additions: f.additions || 0,
+              deletions: f.deletions || 0,
+            }));
 
-          console.log(`[pr-summary-worker] ✅ Summary updated for PR ${pr.repoFullName}#${pr.number} (ID: ${pullRequestId})`);
+            const patchSnippets: string[] = [];
+            for (const file of filesChanged) {
+              if (!file.patch) continue;
+              if (patchSnippets.length >= 5) break; // top 5 patches
+              patchSnippets.push(file.patch.slice(0, 1000)); // truncate to avoid huge prompts
+            }
+
+            const deterministic = {
+              systemLabels: pr.systemLabels || [],
+              riskFlags: pr.riskFlags || [],
+              riskScore: pr.riskScore ?? 0,
+              diffStats:
+                pr.diffStats || {
+                  totalAdditions: prData.additions,
+                  totalDeletions: prData.deletions,
+                  changedFilesCount: filesChanged.length,
+                },
+            };
+
+            const llmInput = {
+              prTitle: prData.title || "",
+              prBody: prData.body || "",
+              repoFullName: pr.repoFullName,
+              number: pr.number,
+              author: pr.author,
+              branchFrom: pr.branchFrom,
+              branchTo: pr.branchTo,
+              filesSummary,
+              patchSnippets,
+              systemLabels: deterministic.systemLabels,
+              riskFlags: deterministic.riskFlags,
+              riskScore: deterministic.riskScore,
+              diffStats: deterministic.diffStats,
+            };
+
+            console.log("[pr-summary-worker] Calling Gemini for PR", pr.number);
+
+            const llmSummary = await generatePrSummaryWithGemini(llmInput);
+
+            const summary: PullRequestSummary = {
+              tldr: llmSummary.tldr,
+              risks: llmSummary.risks,
+              labels: llmSummary.labels,
+              createdAt: new Date(),
+            };
+
+            pr.summary = summary;
+            pr.summaryStatus = "ready";
+            pr.summaryError = null;
+            pr.lastSummarizedAt = new Date();
+
+            await pr.save();
+
+            console.log(
+              `[pr-summary-worker] ✅ Gemini summary generated for PR #${pr.number}`
+            );
+          } catch (e: any) {
+            console.error(
+              "[pr-summary-worker] ❌ Gemini summary failed:",
+              e?.message || e
+            );
+
+            // fallback behaviour — mark error
+            pr.summaryStatus = "error";
+            pr.summaryError = String(e?.message || e).slice(0, 500);
+            await pr.save();
+          }
         } catch (err: any) {
           console.error(`[pr-summary-worker] ❌ Error summarizing PR ${pr.repoFullName}#${pr.number}:`, err.message);
           console.error(`   Stack:`, err.stack);
