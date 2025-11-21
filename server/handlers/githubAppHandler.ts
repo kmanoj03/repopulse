@@ -48,7 +48,7 @@ export async function getInstallUrl(req: Request, res: Response) {
  */
 export async function handleAppSetup(req: Request, res: Response) {
   const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
-  let APP_BASE_URL = process.env.APP_BASE_URL || process.env.BACKEND_URL || 'http://localhost:3000';
+  let APP_BASE_URL = process.env.APP_BASE_URL  || 'http://localhost:3000';
   
   // Remove trailing slash from APP_BASE_URL to avoid double slashes
   APP_BASE_URL = APP_BASE_URL.replace(/\/+$/, '');
